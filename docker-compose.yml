@@ -1,0 +1,11 @@
+version: '3.8'
+
+# This is a minimal dev placeholder for deployguard-scanner multi-module repository.
+# Services are not defined here as per initial structural requirements.
+
+services:
+  # Placeholder for future development
+  # Each module should have its own build configuration if needed for local testing.
+  placeholder:
+    image: alpine
+    command: echo "DeployGuard Scanner Development Environment"

@@ -1,0 +1,33 @@
+name: Go CI - dg-k8s
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'dg-k8s/**'
+      - 'shared/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: dg-k8s/go.sum
+      - name: Lint
+        run: |
+          cd dg-k8s
+          # placeholder for lint (e.g. go vet)
+          go vet ./...
+      - name: Build
+        run: |
+          cd dg-k8s
+          go build ./...
+      - name: Test
+        run: |
+          cd dg-k8s
+          go test ./...

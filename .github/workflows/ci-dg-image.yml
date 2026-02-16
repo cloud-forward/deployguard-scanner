@@ -1,0 +1,39 @@
+name: Python CI - dg-image
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'dg-image/**'
+      - 'shared/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: dg-image/pyproject.toml
+      - name: Install dependencies
+        run: |
+          cd dg-image
+          pip install .
+          pip install pytest flake8
+      - name: Lint
+        run: |
+          cd dg-image
+          # placeholder for lint
+          flake8 src
+      - name: Build
+        run: |
+          cd dg-image
+          python -m build
+      - name: Test
+        run: |
+          cd dg-image
+          pytest
