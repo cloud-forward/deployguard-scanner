@@ -1,11 +1,11 @@
-name: Python CI - dg-cloud
+name: Python CI - dg-aws
 
 on:
   push:
     branches:
       - main
     paths:
-      - 'dg-cloud/**'
+      - '../../dg-aws/**'
       - 'shared/**'
 
 jobs:
@@ -18,7 +18,7 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: dg-cloud/pyproject.toml
+          cache-dependency-path: dg-aws/pyproject.toml
       - name: Install dependencies
         run: |
           cd dg-cloud
