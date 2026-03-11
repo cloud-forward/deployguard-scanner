@@ -6,11 +6,11 @@ RUN apt-get update && apt-get install -y curl \
 
 WORKDIR /app
 
-COPY scanner/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY scanner/src/ ./src/
-COPY scanner/scan.py .
+COPY src/ ./src/
+COPY scan.py .
 
 RUN mkdir -p /app/output
 
