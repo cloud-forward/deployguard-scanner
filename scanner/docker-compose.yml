@@ -5,7 +5,8 @@ services:
     build: .
     environment:
       - CLUSTER_ID=${CLUSTER_ID:-test-cluster}
-      - API_URL=${API_URL:-http://host.docker.internal:8000}
+      - DG_API_ENDPOINT=${DG_API_ENDPOINT:-https://analysis.deployguard.org}
+      - API_URL=${API_URL:-https://analysis.deployguard.org}
       - DG_SCANNER_TYPE=${DG_SCANNER_TYPE:-all}
       - DG_SAVE_LOCAL_COPY=true
       - DG_OUTPUT_DIR=/app/output
@@ -21,7 +22,8 @@ services:
     build: .
     environment:
       - CLUSTER_ID=${CLUSTER_ID:-test-cluster}
-      - API_URL=${API_URL:-http://host.docker.internal:8000}
+      - DG_API_ENDPOINT=${DG_API_ENDPOINT:-https://analysis.deployguard.org}
+      - API_URL=${API_URL:-https://analysis.deployguard.org}
       - DG_SCANNER_TYPE=k8s
       - DG_SAVE_LOCAL_COPY=true
     volumes:
@@ -36,7 +38,8 @@ services:
     build: .
     environment:
       - CLUSTER_ID=${CLUSTER_ID:-test-cluster}
-      - API_URL=${API_URL:-http://host.docker.internal:8000}
+      - DG_API_ENDPOINT=${DG_API_ENDPOINT:-https://analysis.deployguard.org}
+      - API_URL=${API_URL:-https://analysis.deployguard.org}
       - DG_SCANNER_TYPE=image
       - DG_SAVE_LOCAL_COPY=true
       - DG_TRIVY_ENABLED=true

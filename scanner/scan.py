@@ -16,8 +16,15 @@ import json
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(CURRENT_DIR)
 
+sys.path.insert(0, ROOT_DIR)
+sys.path.insert(0, CURRENT_DIR)
+
+from shared.config import load_config
+from shared.orchestrator import ScanOrchestrator, run_polling_loop
+from src.api_client import DeployGuardAPIClient
 from src.config import ScannerConfig
 from src.k8s_scanner import K8sScanner
 from src.image_scanner import ImageScanner
@@ -44,6 +51,7 @@ def main() -> int:
         if args.cluster_id:
             os.environ['CLUSTER_ID'] = args.cluster_id
         if args.api_url:
+            os.environ['DG_API_ENDPOINT'] = args.api_url
             os.environ['API_URL'] = args.api_url
         if args.scan_type:
             os.environ['DG_SCANNER_TYPE'] = args.scan_type
@@ -53,7 +61,7 @@ def main() -> int:
             os.environ['DG_MAX_IMAGES_PER_SCAN'] = str(args.max_images)
 
         # 설정 로드
-        config = ScannerConfig.from_env()
+        config = load_config(ScannerConfig)
 
         print(f"\n{'='*60}")
         print(f"DeployGuard Scanner v3.0.0")
@@ -67,39 +75,83 @@ def main() -> int:
         results = {}
         k8s_result = None
 
-        # K8s 스캔
-        if config.scanner_type in ['k8s', 'all']:
-            scanner = K8sScanner(config)
-            
-            if args.mode == 'manual':
+        if args.mode == 'manual':
+            if config.scanner_type in ['k8s', 'all']:
+                scanner = K8sScanner(config)
                 k8s_result = scanner.run_manual_scan()
-            else:
-                k8s_result = scanner.run_scheduled_scan()
-            
-            results['k8s'] = k8s_result
-            _print_k8s_summary(k8s_result)
+                results['k8s'] = k8s_result
+                _print_k8s_summary(k8s_result)
 
-        # Image 스캔
-        if config.scanner_type in ['image', 'all']:
-            # K8s 결과에서 리소스 추출
-            k8s_scan_data = None
-            if k8s_result:
-                k8s_scan_data = k8s_result.get('payload')
-            elif config.scanner_type == 'image':
-                # Image만 스캔하는 경우, K8s 데이터 먼저 수집
-                print("[*] Collecting K8s data for image scanning...")
-                temp_scanner = K8sScanner(config)
-                k8s_scan_data = temp_scanner.scan()
+            if config.scanner_type in ['image', 'all']:
+                k8s_scan_data = None
+                if k8s_result:
+                    k8s_scan_data = k8s_result.get('payload')
+                elif config.scanner_type == 'image':
+                    print("[*] Collecting K8s data for image scanning...")
+                    temp_scanner = K8sScanner(config)
+                    k8s_scan_data = temp_scanner.scan()
 
-            scanner = ImageScanner(config, k8s_scan_data)
-            
-            if args.mode == 'manual':
+                scanner = ImageScanner(config, k8s_scan_data)
                 image_result = scanner.run_manual_scan()
-            else:
-                image_result = scanner.run_scheduled_scan()
-            
-            results['image'] = image_result
-            _print_image_summary(image_result)
+                results['image'] = image_result
+                _print_image_summary(image_result)
+        else:
+            def poll_once() -> bool:
+                local_results = {}
+                local_k8s_result = None
+
+                if config.scanner_type in ['k8s', 'all']:
+                    k8s_config = ScannerConfig(
+                        **{**config.__dict__, 'scanner_type': 'k8s'}
+                    ) if config.scanner_type == 'all' else config
+                    k8s_api_client = DeployGuardAPIClient(k8s_config)
+                    pending = ScanOrchestrator(k8s_config, k8s_api_client).poll_scan()
+                    if pending:
+                        scanner = K8sScanner(config)
+                        trigger_mode = str(pending.get('trigger_mode', 'scheduled'))
+                        local_k8s_result = scanner.run_worker_scan(str(pending['scan_id']), trigger_mode=trigger_mode)
+                        local_results['k8s'] = local_k8s_result
+                        _print_k8s_summary(local_k8s_result)
+
+                if config.scanner_type in ['image', 'all']:
+                    image_config = ScannerConfig(
+                        **{**config.__dict__, 'scanner_type': 'image'}
+                    ) if config.scanner_type == 'all' else config
+                    image_api_client = DeployGuardAPIClient(image_config)
+                    pending = ScanOrchestrator(image_config, image_api_client).poll_scan()
+                    if pending:
+                        k8s_scan_data = None
+                        if local_k8s_result:
+                            k8s_scan_data = local_k8s_result.get('payload')
+                        else:
+                            print("[*] Collecting K8s data for image scanning...")
+                            temp_scanner = K8sScanner(config)
+                            k8s_scan_data = temp_scanner.scan()
+
+                        scanner = ImageScanner(config, k8s_scan_data)
+                        trigger_mode = str(pending.get('trigger_mode', 'scheduled'))
+                        image_result = scanner.run_worker_scan(str(pending['scan_id']), trigger_mode=trigger_mode)
+                        local_results['image'] = image_result
+                        _print_image_summary(image_result)
+
+                if not local_results:
+                    return False
+
+                print(f"\n{'='*60}")
+                print("SCAN COMPLETE")
+                print(f"{'='*60}")
+                print(json.dumps({
+                    "status": "success",
+                    "cluster_id": config.cluster_id,
+                    "mode": args.mode,
+                    "scanner_type": config.scanner_type,
+                    "k8s_scan_id": local_results.get("k8s", {}).get("scan_id"),
+                    "image_scan_id": local_results.get("image", {}).get("scan_id"),
+                }, indent=2))
+                return True
+
+            run_polling_loop(poll_once)
+            return 0
 
         # 최종 결과
         print(f"\n{'='*60}")
@@ -116,6 +168,12 @@ def main() -> int:
 
         return 0
 
+    except KeyboardInterrupt:
+        print(json.dumps({
+            "status": "interrupted",
+            "mode": args.mode,
+        }, indent=2), file=sys.stderr)
+        return 130
     except Exception as e:
         print(json.dumps({
             "status": "error",

@@ -33,12 +33,20 @@ spec:
           args:
             - manual
           env:
+            - name: DG_CLUSTER_ID
+              value: {{ include "deployguard-scanner.clusterId" . | quote }}
             - name: CLUSTER_ID
               value: {{ include "deployguard-scanner.clusterId" . | quote }}
             - name: CLUSTER_NAME
               value: {{ include "deployguard-scanner.clusterName" . | quote }}
+            - name: DG_CLUSTER_NAME
+              value: {{ include "deployguard-scanner.clusterName" . | quote }}
+            - name: DG_API_ENDPOINT
+              value: {{ include "deployguard-scanner.apiUrl" . | quote }}
             - name: API_URL
               value: {{ include "deployguard-scanner.apiUrl" . | quote }}
+            - name: DG_API_TOKEN
+              value: {{ include "deployguard-scanner.apiToken" . | quote }}
             - name: DG_SCANNER_TYPE
               value: {{ .Values.manualScan.scanType | default "all" | quote }}
           envFrom:

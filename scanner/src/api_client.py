@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
-import time
+import logging
 from typing import Any, Dict, List, Optional
 
-import requests
-
 from .config import ScannerConfig
+from shared.api_client import EngineApiClient
+from shared.uploader import JsonResultUploader
+
+logger = logging.getLogger(__name__)
 
 
 class DeployGuardAPIClient:
@@ -23,6 +25,8 @@ class DeployGuardAPIClient:
     def __init__(self, config: ScannerConfig) -> None:
         self.config = config
         self.base_url = config.api_url
+        self.engine_client = EngineApiClient(config)
+        self.uploader = JsonResultUploader(config, self)
         self.scan_id: Optional[str] = None
         self.scanner_type: Optional[str] = None
         self.uploaded_files: List[str] = []
@@ -38,28 +42,52 @@ class DeployGuardAPIClient:
         Returns:
             scan_id
         """
-        response = self._request_with_retry(
-            method="POST",
-            url=f"{self.base_url}/api/scans/start",
+        data = self.engine_client.start_scan(
             json_body={
-                "cluster_id": self.config.cluster_id,
                 "scanner_type": scanner_type,
                 "trigger_mode": trigger_mode,
             },
         )
-        
-        data = response.json()
+
         self.scan_id = data.get("scan_id")
         self.scanner_type = scanner_type
         self.uploaded_files = []
-        
+
         if not self.scan_id:
             raise RuntimeError(f"scan_id not found in response: {data}")
-        
+
         print(f"[+] Scan started: {self.scan_id}")
         return str(self.scan_id)
 
-    def get_upload_url(self, filename: str = "scan.json") -> Dict[str, Any]:
+    def bind_scan(self, scan_id: str, scanner_type: str) -> None:
+        self.scan_id = scan_id
+        self.scanner_type = scanner_type
+        self.uploaded_files = []
+
+    def poll_scan(self) -> Optional[Dict[str, Any]]:
+        data = self.engine_client.poll_scan(
+            path=self.config.scan_poll_path,
+            json_body={
+                "scanner_type": self.config.scanner_type,
+            },
+        )
+        if not data:
+            return None
+
+        scan_id = data.get("scan_id")
+        scanner_type = data.get("scanner_type", self.config.scanner_type)
+        if not scan_id:
+            raise RuntimeError(f"scan_id not found in poll response: {data}")
+
+        self.bind_scan(str(scan_id), str(scanner_type))
+        return data
+
+    def get_upload_url(
+        self,
+        filename: str = "scan.json",
+        scan_id: Optional[str] = None,
+        scanner_type: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         S3 Presigned URL 획득
         
@@ -69,29 +97,30 @@ class DeployGuardAPIClient:
                 "s3_key": "scans/{cluster_id}/{scan_id}/{scanner_type}/scan.json"
             }
         """
-        if not self.scan_id:
+        resolved_scan_id = scan_id or self.scan_id
+        resolved_scanner_type = scanner_type or self.scanner_type
+
+        if not resolved_scan_id:
             raise ValueError("scan_id is None. Call start_scan() first.")
-        
-        response = self._request_with_retry(
-            method="POST",
-            url=f"{self.base_url}/api/scans/{self.scan_id}/upload-url",
+        if not resolved_scanner_type:
+            raise ValueError("scanner_type is None. Call start_scan() first.")
+
+        data = self.engine_client.get_upload_url(
+            scan_id=resolved_scan_id,
             json_body={
                 "file_name": filename,
-                "scanner_type": self.scanner_type,
+                "scanner_type": resolved_scanner_type,
             },
         )
-        
-        data = response.json()
-        
-        # presigned_url 또는 upload_url 필드 처리
+
         upload_url = data.get("upload_url") or data.get("presigned_url")
         if not upload_url:
             raise RuntimeError(f"upload_url not found in response: {data}")
-        
+
         s3_key = data.get("s3_key") or data.get("key") or filename
-        
+
         print(f"[+] Got upload URL for: {s3_key}")
-        
+
         return {
             "upload_url": upload_url,
             "s3_key": s3_key,
@@ -101,49 +130,12 @@ class DeployGuardAPIClient:
         """
         S3에 JSON 직접 업로드
         """
-        json_bytes = json.dumps(
-            payload, 
-            ensure_ascii=False, 
-            indent=2, 
-            default=str
-        ).encode("utf-8")
-        
-        last_error: Optional[Exception] = None
-        
-        for attempt in range(self.config.max_retries):
-            try:
-                response = requests.put(
-                    upload_url,
-                    data=json_bytes,
-                    headers={"Content-Type": "application/json"},
-                    timeout=self.config.upload_timeout_seconds,
-                )
-                
-                if 200 <= response.status_code < 300:
-                    print(f"[+] Uploaded to S3 successfully")
-                    return True
-                
-                if response.status_code in {403, 408, 429} or response.status_code >= 500:
-                    last_error = RuntimeError(
-                        f"S3 upload failed: {response.status_code} - {response.text[:200]}"
-                    )
-                    self._sleep_before_retry(attempt)
-                    continue
-                
-                raise RuntimeError(
-                    f"S3 upload failed: {response.status_code} - {response.text[:200]}"
-                )
-                
-            except requests.Timeout as e:
-                last_error = e
-                self._sleep_before_retry(attempt)
-            except requests.RequestException as e:
-                last_error = e
-                self._sleep_before_retry(attempt)
-        
-        if last_error:
-            raise RuntimeError(f"S3 upload failed after {self.config.max_retries} retries: {last_error}")
-        return False
+        self.uploader._upload_to_s3(
+            upload_url,
+            self._serialize_payload(payload),
+        )
+        print(f"[+] Uploaded to S3 successfully")
+        return True
 
     def upload_scan_result(self, payload: Dict[str, Any], filename: str = "scan.json") -> str:
         """
@@ -152,15 +144,28 @@ class DeployGuardAPIClient:
         Returns:
             s3_key
         """
-        url_info = self.get_upload_url(filename)
-        self.upload_to_s3(url_info["upload_url"], payload)
-        
+        if not self.scan_id:
+            raise ValueError("scan_id is None. Call start_scan() first.")
+        if not self.scanner_type:
+            raise ValueError("scanner_type is None. Call start_scan() first.")
+
+        url_info = self.uploader.upload_scan_result(
+            scan_id=self.scan_id,
+            scanner_type=self.scanner_type,
+            payload=payload,
+            filename=filename,
+        )
+
         s3_key = url_info["s3_key"]
         self.uploaded_files.append(s3_key)
-        
+        print(f"[+] Uploaded to S3 successfully")
         return s3_key
 
-    def complete_scan(self, meta: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def complete_scan(
+        self,
+        meta: Optional[Dict[str, Any]] = None,
+        resource_counts: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """
         스캔 완료 알림
         
@@ -169,28 +174,50 @@ class DeployGuardAPIClient:
         """
         if not self.scan_id:
             raise ValueError("scan_id is None. Call start_scan() first.")
-        
+
         if not self.uploaded_files:
             raise ValueError("No files uploaded. Call upload_scan_result() first.")
-        
+
         json_body: Dict[str, Any] = {
             "files": self.uploaded_files,
         }
-        
+
+        if resource_counts is not None:
+            json_body["resource_counts"] = resource_counts
         if meta:
             json_body["meta"] = meta
-        
-        response = self._request_with_retry(
-            method="POST",
-            url=f"{self.base_url}/api/scans/{self.scan_id}/complete",
+
+        data = self.engine_client.complete_scan(
+            scan_id=self.scan_id,
             json_body=json_body,
         )
-        
-        data = response.json()
+
         status = data.get("status", "unknown")
         print(f"[+] Scan completed: {self.scan_id} → {status}")
-        
+
         return data
+
+    def report_error(
+        self,
+        scan_id: Optional[str] = None,
+        message: str = "",
+        detail: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        resolved_scan_id = scan_id or self.scan_id
+        if not resolved_scan_id:
+            return
+
+        payload: Dict[str, Any] = {"message": message}
+        if detail:
+            payload["detail"] = detail
+
+        try:
+            self.engine_client.report_error(
+                scan_id=resolved_scan_id,
+                json_body=payload,
+            )
+        except Exception:
+            logger.exception("Failed to report scan error to engine")
 
     def full_scan_flow(
         self,
@@ -213,7 +240,7 @@ class DeployGuardAPIClient:
         scan_id = self.start_scan(scanner_type, trigger_mode)
         s3_key = self.upload_scan_result(payload, filename)
         complete_result = self.complete_scan(meta)
-        
+
         return {
             "scan_id": scan_id,
             "s3_key": s3_key,
@@ -221,52 +248,10 @@ class DeployGuardAPIClient:
             "complete_response": complete_result,
         }
 
-    def _request_with_retry(
-        self,
-        method: str,
-        url: str,
-        json_body: Optional[Dict[str, Any]] = None,
-    ) -> requests.Response:
-        """재시도 로직이 포함된 HTTP 요청"""
-        last_error: Optional[Exception] = None
-        
-        for attempt in range(self.config.max_retries):
-            try:
-                response = requests.request(
-                    method=method,
-                    url=url,
-                    json=json_body,
-                    timeout=self.config.http_timeout_seconds,
-                )
-                
-                if 200 <= response.status_code < 300:
-                    return response
-                
-                # 재시도 가능한 에러
-                if response.status_code in {408, 429, 502, 503, 504}:
-                    last_error = RuntimeError(
-                        f"Request failed: {response.status_code} - {response.text[:200]}"
-                    )
-                    self._sleep_before_retry(attempt)
-                    continue
-                
-                # 재시도 불가능한 에러
-                response.raise_for_status()
-                
-            except requests.Timeout as e:
-                last_error = e
-                self._sleep_before_retry(attempt)
-            except requests.RequestException as e:
-                last_error = e
-                self._sleep_before_retry(attempt)
-        
-        if last_error:
-            raise RuntimeError(f"Request failed after {self.config.max_retries} retries: {last_error}")
-        raise RuntimeError(f"Request failed: {method} {url}")
-
-    def _sleep_before_retry(self, attempt: int) -> None:
-        if attempt >= self.config.max_retries - 1:
-            return
-        sleep_time = self.config.backoff_seconds * (2 ** attempt)
-        print(f"[*] Retrying in {sleep_time}s...")
-        time.sleep(sleep_time)
+    def _serialize_payload(self, payload: Dict[str, Any]) -> bytes:
+        return json.dumps(
+            payload,
+            ensure_ascii=False,
+            indent=2,
+            default=str,
+        ).encode("utf-8")

@@ -19,6 +19,7 @@ from .collectors import (
     VPCCollector,
     build_aws_payload,
 )
+from .shared.orchestrator import ScanOrchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -46,10 +47,15 @@ class CloudScanner:
     def run_scheduled_scan(self) -> Dict[str, Any]:
         return self._run_scan(trigger_mode="scheduled")
 
-    def _run_scan(self, trigger_mode: str) -> Dict[str, Any]:
-        scan_id = self.api_client.start_scan(
+    def run_worker_scan(self, scan_id: str, trigger_mode: str = "scheduled") -> Dict[str, Any]:
+        return self._run_scan(trigger_mode=trigger_mode, assigned_scan_id=scan_id)
+
+    def _run_scan(self, trigger_mode: str, assigned_scan_id: Optional[str] = None) -> Dict[str, Any]:
+        orchestrator = ScanOrchestrator(self.config, self.api_client)
+        scan_id = orchestrator.bind_or_start_scan(
             scanner_type=self.config.scanner_type,
             trigger_mode=trigger_mode,
+            assigned_scan_id=assigned_scan_id,
             scan_type=self.config.scan_type,
         )
 
@@ -65,39 +71,90 @@ class CloudScanner:
             if self.config.save_local_copy:
                 local_output_file = self.save_json(payload)
 
-            uploaded_files = self._upload_payload(scan_id, payload)
+            try:
+                uploaded_files = [orchestrator.upload_result(payload, self.config.upload_file_name)]
+            except KeyboardInterrupt as exc:
+                orchestrator.handle_failure(
+                    exc,
+                    phase="upload",
+                    detail={
+                        "scanner_type": self.config.scanner_type,
+                        "trigger_mode": trigger_mode,
+                    },
+                )
+                raise
+            except Exception as exc:
+                orchestrator.handle_failure(
+                    exc,
+                    phase="upload",
+                    detail={
+                        "scanner_type": self.config.scanner_type,
+                        "trigger_mode": trigger_mode,
+                    },
+                )
+                raise
+
             resource_counts = payload.get("resource_counts", {})
 
-            complete_resp = self.api_client.complete_scan(
+            try:
+                complete_resp = orchestrator.complete_scan(
+                    resource_counts=resource_counts,
+                    meta={
+                        "scanner_type": self.config.scanner_type,
+                        "trigger_mode": trigger_mode,
+                        "scan_type": self.config.scan_type,
+                        "uploaded_file_name": self.config.upload_file_name,
+                        "recommended_cron_schedule": self.config.aws_recommended_cron_schedule,
+                    },
+                )
+            except KeyboardInterrupt as exc:
+                orchestrator.handle_failure(
+                    exc,
+                    phase="complete",
+                    detail={
+                        "scanner_type": self.config.scanner_type,
+                        "trigger_mode": trigger_mode,
+                        "uploaded_files": uploaded_files,
+                    },
+                )
+                raise
+            except Exception as exc:
+                orchestrator.handle_failure(
+                    exc,
+                    phase="complete",
+                    detail={
+                        "scanner_type": self.config.scanner_type,
+                        "trigger_mode": trigger_mode,
+                        "uploaded_files": uploaded_files,
+                    },
+                )
+                raise
+
+            return orchestrator.build_result(
                 scan_id=scan_id,
-                files=uploaded_files,
-                resource_counts=resource_counts,
-                meta={
-                    "cluster_id": self.config.cluster_id,
-                    "scanner_type": self.config.scanner_type,
-                    "trigger_mode": trigger_mode,
-                    "scan_type": self.config.scan_type,
-                    "uploaded_file_name": self.config.upload_file_name,
-                    "recommended_cron_schedule": self.config.aws_recommended_cron_schedule,
+                payload=payload,
+                complete_result=complete_resp,
+                uploaded_files=uploaded_files,
+                local_file=local_output_file,
+                extra={
+                    "resource_counts": resource_counts,
                 },
             )
-
-            return {
-                "status": "ok",
-                "scan_id": scan_id,
-                "cluster_id": self.config.cluster_id,
-                "engine_status": complete_resp.get("status", "completed"),
-                "uploaded_files": uploaded_files,
-                "local_output_file": local_output_file,
-                "resource_counts": resource_counts,
-                "payload": payload,
-            }
-        except Exception as exc:
-            self.api_client.report_error(
-                scan_id=scan_id,
-                message=str(exc),
+        except KeyboardInterrupt as exc:
+            orchestrator.handle_failure(
+                exc,
+                phase="execution",
                 detail={
-                    "cluster_id": self.config.cluster_id,
+                    "scanner_type": self.config.scanner_type,
+                    "trigger_mode": trigger_mode,
+                },
+            )
+            raise
+        except Exception as exc:
+            orchestrator.handle_failure(
+                exc,
+                phase="execution",
+                detail={
                     "scanner_type": self.config.scanner_type,
                     "trigger_mode": trigger_mode,
                 },
@@ -187,20 +244,6 @@ class CloudScanner:
 
         logger.info("Saved local copy: %s", filepath)
         return filepath
-
-    def _upload_payload(self, scan_id: str, payload: Dict[str, Any]) -> list[str]:
-        filename = self.config.upload_file_name
-        content = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
-
-        upload_info = self.api_client.get_upload_url(
-            scan_id=scan_id,
-            scanner_type=self.config.scanner_type,
-            filename=filename,
-        )
-        self.api_client.upload_to_s3(upload_info["upload_url"], content)
-
-        logger.info("Uploaded: %s", upload_info["file_key"])
-        return [upload_info["file_key"]]
 
     def _resolve_account_id(self) -> str:
         if self.config.aws_account_id:

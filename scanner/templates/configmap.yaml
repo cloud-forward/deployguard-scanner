@@ -21,6 +21,9 @@ data:
   DG_MAX_IMAGES_PER_SCAN: {{ .Values.imageScanner.maxImagesPerScan | quote }}
   
   # 공통 설정
+  DG_API_ENDPOINT: {{ include "deployguard-scanner.apiUrl" . | quote }}
+  DG_API_URL: {{ include "deployguard-scanner.apiUrl" . | quote }}
+  DG_ENGINE_URL: {{ include "deployguard-scanner.apiUrl" . | quote }}
   DG_SAVE_LOCAL_COPY: {{ .Values.localOutput.enabled | quote }}
   DG_OUTPUT_DIR: {{ .Values.localOutput.path | quote }}
   DG_LOG_LEVEL: {{ .Values.logLevel | quote }}

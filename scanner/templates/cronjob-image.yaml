@@ -40,12 +40,20 @@ spec:
                 - scheduled
               env:
                 # 필수: Helm values에서 주입
+                - name: DG_CLUSTER_ID
+                  value: {{ include "deployguard-scanner.clusterId" . | quote }}
                 - name: CLUSTER_ID
                   value: {{ include "deployguard-scanner.clusterId" . | quote }}
                 - name: CLUSTER_NAME
                   value: {{ include "deployguard-scanner.clusterName" . | quote }}
+                - name: DG_CLUSTER_NAME
+                  value: {{ include "deployguard-scanner.clusterName" . | quote }}
+                - name: DG_API_ENDPOINT
+                  value: {{ include "deployguard-scanner.apiUrl" . | quote }}
                 - name: API_URL
                   value: {{ include "deployguard-scanner.apiUrl" . | quote }}
+                - name: DG_API_TOKEN
+                  value: {{ include "deployguard-scanner.apiToken" . | quote }}
                 
                 # 스캐너 타입
                 - name: DG_SCANNER_TYPE

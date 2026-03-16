@@ -8,8 +8,9 @@ clusterName: ""         # 클러스터 표시 이름 (없으면 clusterId 사용
 
 # DeployGuard API 설정
 api:
-  url: "https://api.deployguard.io"
-  # token: ""           # API 인증 토큰 (secret으로 관리 권장)
+  endpoint: "https://analysis.deployguard.org"
+  url: ""               # deprecated alias
+  token: ""             # API 인증 토큰
 
 # 스캐너 이미지 설정
 image:

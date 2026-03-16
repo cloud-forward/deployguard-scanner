@@ -74,10 +74,17 @@ Cluster Name - 없으면 clusterId 사용
 {{- end }}
 
 {{/*
-API URL
+API endpoint
 */}}
 {{- define "deployguard-scanner.apiUrl" -}}
-{{- default "https://api.deployguard.io" .Values.api.url }}
+{{- default "https://analysis.deployguard.org" (default .Values.api.url .Values.api.endpoint) }}
+{{- end }}
+
+{{/*
+API token
+*/}}
+{{- define "deployguard-scanner.apiToken" -}}
+{{- default "" .Values.api.token }}
 {{- end }}
 
 {{/*

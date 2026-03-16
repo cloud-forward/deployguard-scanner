@@ -30,6 +30,7 @@ class ScannerConfig:
     # 필수 설정
     cluster_id: str
     api_url: str
+    api_token: Optional[str] = None
 
     # 클러스터 정보
     cluster_name: Optional[str] = None
@@ -70,17 +71,23 @@ class ScannerConfig:
     # 권장 스케줄
     k8s_recommended_cron_schedule: str = "*/30 * * * *"
     image_recommended_cron_schedule: str = "0 */6 * * *"
+    scan_poll_path: str = "/api/scans/poll"
 
     @staticmethod
     def from_env() -> "ScannerConfig":
         cluster_id = os.getenv("CLUSTER_ID") or os.getenv("DG_CLUSTER_ID")
-        api_url = os.getenv("API_URL") or os.getenv("DG_API_URL") or os.getenv("DG_ENGINE_URL")
+        api_url = (
+            os.getenv("DG_API_ENDPOINT")
+            or os.getenv("API_URL")
+            or os.getenv("DG_API_URL")
+            or os.getenv("DG_ENGINE_URL")
+        )
 
         if not cluster_id:
             raise ValueError("Missing required environment variable: CLUSTER_ID or DG_CLUSTER_ID")
 
         if not api_url:
-            api_url = "http://localhost:8000"  # 기본값
+            api_url = "https://analysis.deployguard.org"
 
         scanner_type = os.getenv("DG_SCANNER_TYPE", "all").strip().lower()
         if scanner_type not in {"k8s", "image", "all"}:
@@ -89,6 +96,7 @@ class ScannerConfig:
         return ScannerConfig(
             cluster_id=cluster_id,
             api_url=api_url.rstrip("/"),
+            api_token=os.getenv("DG_API_TOKEN") or os.getenv("API_TOKEN"),
             cluster_name=os.getenv("CLUSTER_NAME") or os.getenv("DG_CLUSTER_NAME") or cluster_id,
             cluster_type=os.getenv("DG_CLUSTER_TYPE", "unknown"),
             scanner_type=scanner_type,
@@ -114,4 +122,5 @@ class ScannerConfig:
             output_filename=os.getenv("DG_OUTPUT_FILENAME"),
             k8s_recommended_cron_schedule=os.getenv("DG_K8S_CRON_SCHEDULE", "*/30 * * * *"),
             image_recommended_cron_schedule=os.getenv("DG_IMAGE_CRON_SCHEDULE", "0 */6 * * *"),
+            scan_poll_path=os.getenv("DG_SCAN_POLL_PATH", "/api/scans/poll"),
         )

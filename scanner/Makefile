@@ -1,7 +1,7 @@
 .PHONY: help install test lint scan-k8s scan-image scan-all build push clean
 
 CLUSTER_ID ?= test-cluster
-API_URL ?= http://localhost:8000
+API_URL ?= https://analysis.deployguard.org
 IMAGE_NAME ?= deployguard-scanner
 IMAGE_TAG ?= latest
 

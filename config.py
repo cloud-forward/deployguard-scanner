@@ -50,6 +50,7 @@ class ScannerConfig:
     cluster_id: str
     region: str
     api_url: str
+    api_token: Optional[str] = None
 
     role_arn: Optional[str] = None
     aws_account_id: Optional[str] = None
@@ -97,18 +98,25 @@ class ScannerConfig:
     eks_cluster_names: List[str] = field(default_factory=list)
 
     aws_recommended_cron_schedule: str = "22 */4 * * *"
+    scan_poll_path: str = "/api/scans/poll"
 
     @staticmethod
     def from_env() -> "ScannerConfig":
         raw_cluster_id = os.getenv("DG_CLUSTER_ID") or os.getenv("CLUSTER_ID")
         region = os.getenv("AWS_REGION") or os.getenv("DG_REGION")
-        api_url = os.getenv("API_URL") or os.getenv("DG_ENGINE_URL") or "http://dg_analysis"
+        api_url = (
+            os.getenv("DG_API_ENDPOINT")
+            or os.getenv("API_URL")
+            or os.getenv("DG_API_URL")
+            or os.getenv("DG_ENGINE_URL")
+            or "https://analysis.deployguard.org"
+        )
 
         missing = [
             name for name, value in {
                 "DG_CLUSTER_ID or CLUSTER_ID": raw_cluster_id,
                 "AWS_REGION or DG_REGION": region,
-                "API_URL or DG_ENGINE_URL": api_url,
+                "DG_API_ENDPOINT or API_URL or DG_API_URL or DG_ENGINE_URL": api_url,
             }.items()
             if not value
         ]
@@ -152,6 +160,7 @@ class ScannerConfig:
             cluster_id=cluster_id,
             region=region.strip(),
             api_url=api_url.rstrip("/"),
+            api_token=os.getenv("DG_API_TOKEN") or os.getenv("API_TOKEN"),
             role_arn=os.getenv("DG_ROLE_ARN"),
             aws_account_id=os.getenv("DG_AWS_ACCOUNT_ID"),
             external_id=os.getenv("DG_EXTERNAL_ID"),
@@ -191,4 +200,5 @@ class ScannerConfig:
             s3_specified_buckets=_get_csv_list("DG_S3_SPECIFIED_BUCKETS"),
             eks_cluster_names=_get_csv_list("DG_EKS_CLUSTER_NAMES"),
             aws_recommended_cron_schedule=os.getenv("DG_AWS_CRON_SCHEDULE", "22 */4 * * *"),
+            scan_poll_path=os.getenv("DG_SCAN_POLL_PATH", "/api/scans/poll"),
         )

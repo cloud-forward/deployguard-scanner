@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import logging
-import time
 from typing import Any, Dict, Optional
 
-import requests
-
 from .config import ScannerConfig
+from .shared.api_client import EngineApiClient
+from .shared.uploader import JsonResultUploader
 
 logger = logging.getLogger(__name__)
 
@@ -14,43 +13,81 @@ logger = logging.getLogger(__name__)
 class DeployGuardApiClient:
     def __init__(self, config: ScannerConfig) -> None:
         self.config = config
+        self.engine_client = EngineApiClient(config)
+        self.uploader = JsonResultUploader(config, self)
+        self.scan_id: Optional[str] = None
+        self.scanner_type: Optional[str] = None
+        self.uploaded_files: list[str] = []
 
     def start_scan(self, scanner_type: str, trigger_mode: str, scan_type: str) -> str:
-        response = self._request_with_retry(
-            method="POST",
-            url=f"{self.config.api_url}/api/scans/start",
+        data = self.engine_client.start_scan(
             json_body={
-                "cluster_id": self.config.cluster_id,
                 "scanner_type": scanner_type,
                 "trigger_mode": trigger_mode,
                 "scan_type": scan_type,
             },
         )
-        data = response.json()
         scan_id = data.get("scan_id")
         if not scan_id:
             raise RuntimeError(f"scan_id not found in /api/scans/start response: {data}")
+
+        self.scan_id = str(scan_id)
+        self.scanner_type = scanner_type
+        self.uploaded_files = []
         return str(scan_id)
 
-    def get_upload_url(self, scan_id: str, scanner_type: str, filename: str) -> Dict[str, Any]:
-        response = self._request_with_retry(
-            method="POST",
-            url=f"{self.config.api_url}/api/scans/{scan_id}/upload-url",
+    def bind_scan(self, scan_id: str, scanner_type: str) -> None:
+        self.scan_id = scan_id
+        self.scanner_type = scanner_type
+        self.uploaded_files = []
+
+    def poll_scan(self) -> Optional[Dict[str, Any]]:
+        data = self.engine_client.poll_scan(
+            path=self.config.scan_poll_path,
             json_body={
-                "cluster_id": self.config.cluster_id,
-                "scanner_type": scanner_type,
+                "scanner_type": self.config.scanner_type,
+                "scan_type": self.config.scan_type,
+            },
+        )
+        if not data:
+            return None
+
+        scan_id = data.get("scan_id")
+        scanner_type = data.get("scanner_type", self.config.scanner_type)
+        if not scan_id:
+            raise RuntimeError(f"scan_id not found in poll response: {data}")
+
+        self.bind_scan(str(scan_id), str(scanner_type))
+        return data
+
+    def get_upload_url(
+        self,
+        scan_id: Optional[str] = None,
+        scanner_type: Optional[str] = None,
+        filename: str = "aws-snapshot.json",
+    ) -> Dict[str, Any]:
+        resolved_scan_id = scan_id or self.scan_id
+        resolved_scanner_type = scanner_type or self.scanner_type
+        if not resolved_scan_id:
+            raise ValueError("scan_id is None. Call start_scan() first.")
+        if not resolved_scanner_type:
+            raise ValueError("scanner_type is None. Call start_scan() first.")
+
+        data = self.engine_client.get_upload_url(
+            scan_id=resolved_scan_id,
+            json_body={
+                "scanner_type": resolved_scanner_type,
                 "filename": filename,
                 "file_name": filename,
             },
         )
-        data = response.json()
 
         upload_url = data.get("presigned_url") or data.get("upload_url")
         file_key = data.get("s3_key") or data.get("key") or data.get("file_key")
         if not upload_url:
             raise RuntimeError(f"presigned_url/upload_url not found in upload-url response: {data}")
         if not file_key:
-            file_key = f"scans/{self.config.cluster_id}/{scan_id}/{scanner_type}/{filename}"
+            file_key = f"scans/{self.config.cluster_id}/{resolved_scan_id}/{resolved_scanner_type}/{filename}"
 
         return {
             **data,
@@ -59,117 +96,67 @@ class DeployGuardApiClient:
         }
 
     def upload_to_s3(self, upload_url: str, content: bytes) -> None:
-        last_error: Optional[Exception] = None
+        self.uploader._upload_to_s3(upload_url, content)
 
-        for attempt in range(self.config.max_retries):
-            try:
-                response = requests.put(
-                    upload_url,
-                    data=content,
-                    headers={"Content-Type": "application/json"},
-                    timeout=self.config.upload_timeout_seconds,
-                )
+    def upload_scan_result(self, payload: Dict[str, Any], filename: str = "aws-snapshot.json") -> str:
+        if not self.scan_id:
+            raise ValueError("scan_id is None. Call start_scan() first.")
+        if not self.scanner_type:
+            raise ValueError("scanner_type is None. Call start_scan() first.")
 
-                if 200 <= response.status_code < 300:
-                    return
-
-                if response.status_code in {403, 408, 429} or 500 <= response.status_code < 600:
-                    last_error = RuntimeError(
-                        f"S3 upload failed with {response.status_code}: {response.text}"
-                    )
-                    self._sleep_before_retry(attempt)
-                    continue
-
-                raise RuntimeError(f"S3 upload failed with {response.status_code}: {response.text}")
-
-            except requests.Timeout as exc:
-                last_error = exc
-                self._sleep_before_retry(attempt)
-            except requests.RequestException as exc:
-                last_error = exc
-                self._sleep_before_retry(attempt)
-
-        if last_error:
-            raise RuntimeError(f"Upload failed after retries: {last_error}") from last_error
-        raise RuntimeError("Upload failed after retries")
+        upload_info = self.uploader.upload_scan_result(
+            scan_id=self.scan_id,
+            scanner_type=self.scanner_type,
+            payload=payload,
+            filename=filename,
+        )
+        file_key = upload_info["file_key"]
+        self.uploaded_files.append(file_key)
+        return file_key
 
     def complete_scan(
         self,
-        scan_id: str,
-        files: list[str],
+        scan_id: Optional[str] = None,
+        files: Optional[list[str]] = None,
         resource_counts: Optional[Dict[str, Any]] = None,
         meta: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        json_body: Dict[str, Any] = {"files": files}
+        resolved_scan_id = scan_id or self.scan_id
+        resolved_files = files or self.uploaded_files
+        if not resolved_scan_id:
+            raise ValueError("scan_id is None. Call start_scan() first.")
+        if not resolved_files:
+            raise ValueError("No files uploaded. Call upload_scan_result() first.")
+
+        json_body: Dict[str, Any] = {"files": resolved_files}
         if resource_counts is not None:
             json_body["resource_counts"] = resource_counts
         if meta:
             json_body["meta"] = meta
 
-        response = self._request_with_retry(
-            method="POST",
-            url=f"{self.config.api_url}/api/scans/{scan_id}/complete",
+        return self.engine_client.complete_scan(
+            scan_id=resolved_scan_id,
             json_body=json_body,
         )
-        return response.json()
 
-    def report_error(self, scan_id: str, message: str, detail: Optional[Dict[str, Any]] = None) -> None:
+    def report_error(
+        self,
+        scan_id: Optional[str] = None,
+        message: str = "",
+        detail: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        resolved_scan_id = scan_id or self.scan_id
+        if not resolved_scan_id:
+            return
+
         payload: Dict[str, Any] = {"message": message}
         if detail:
             payload["detail"] = detail
 
         try:
-            self._request_with_retry(
-                method="POST",
-                url=f"{self.config.api_url}/api/scans/{scan_id}/error",
+            self.engine_client.report_error(
+                scan_id=resolved_scan_id,
                 json_body=payload,
             )
         except Exception:
             logger.exception("Failed to report scan error to engine")
-
-    def _request_with_retry(
-        self,
-        method: str,
-        url: str,
-        json_body: Optional[Dict[str, Any]] = None,
-        timeout: Optional[int] = None,
-    ) -> requests.Response:
-        last_error: Optional[Exception] = None
-        request_timeout = timeout or self.config.http_timeout_seconds
-
-        for attempt in range(self.config.max_retries):
-            try:
-                response = requests.request(
-                    method=method,
-                    url=url,
-                    json=json_body,
-                    timeout=request_timeout,
-                )
-
-                if 200 <= response.status_code < 300:
-                    return response
-
-                if response.status_code in {408, 409, 425, 429} or 500 <= response.status_code < 600:
-                    last_error = RuntimeError(
-                        f"{method} {url} failed with {response.status_code}: {response.text}"
-                    )
-                    self._sleep_before_retry(attempt)
-                    continue
-
-                raise RuntimeError(f"{method} {url} failed with {response.status_code}: {response.text}")
-
-            except requests.Timeout as exc:
-                last_error = exc
-                self._sleep_before_retry(attempt)
-            except requests.RequestException as exc:
-                last_error = exc
-                self._sleep_before_retry(attempt)
-
-        if last_error:
-            raise RuntimeError(f"Request failed after retries: {last_error}") from last_error
-        raise RuntimeError(f"Request failed after retries: {method} {url}")
-
-    def _sleep_before_retry(self, attempt: int) -> None:
-        if attempt >= self.config.max_retries - 1:
-            return
-        time.sleep(self.config.backoff_seconds * (2 ** attempt))
