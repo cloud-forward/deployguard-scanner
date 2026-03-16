@@ -1,0 +1,59 @@
+{{/*
+수동 스캔용 Job - helm upgrade --set manualScan.enabled=true로 실행
+또는 kubectl create job으로 직접 생성
+*/}}
+{{- if .Values.manualScan.enabled -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "deployguard-scanner.fullname" . }}-manual-{{ now | date "20060102-150405" }}
+  namespace: {{ include "deployguard-scanner.namespace" . }}
+  labels:
+    {{- include "deployguard-scanner.labels" . | nindent 4 }}
+    app.kubernetes.io/component: manual-scan
+spec:
+  activeDeadlineSeconds: {{ .Values.cronJob.activeDeadlineSeconds }}
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        {{- include "deployguard-scanner.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: manual-scan
+    spec:
+      serviceAccountName: {{ include "deployguard-scanner.serviceAccountName" . }}
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: scanner
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - manual
+          env:
+            - name: CLUSTER_ID
+              value: {{ include "deployguard-scanner.clusterId" . | quote }}
+            - name: CLUSTER_NAME
+              value: {{ include "deployguard-scanner.clusterName" . | quote }}
+            - name: API_URL
+              value: {{ include "deployguard-scanner.apiUrl" . | quote }}
+            - name: DG_SCANNER_TYPE
+              value: {{ .Values.manualScan.scanType | default "all" | quote }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "deployguard-scanner.fullname" . }}-config
+          resources:
+            {{- toYaml .Values.imageScanner.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: trivy-cache
+              mountPath: /root/.cache/trivy
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: trivy-cache
+          emptyDir: {}
+{{- end }}
