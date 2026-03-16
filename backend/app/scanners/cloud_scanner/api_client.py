@@ -19,12 +19,12 @@ class DeployGuardApiClient:
         self.scanner_type: Optional[str] = None
         self.uploaded_files: list[str] = []
 
-    def start_scan(self, scanner_type: str, trigger_mode: str, scan_type: str) -> str:
+    def start_scan(self, scanner_type: str, request_source: str) -> str:
         data = self.engine_client.start_scan(
             json_body={
+                "cluster_id": self.config.cluster_id,
                 "scanner_type": scanner_type,
-                "trigger_mode": trigger_mode,
-                "scan_type": scan_type,
+                "request_source": request_source,
             },
         )
         scan_id = data.get("scan_id")

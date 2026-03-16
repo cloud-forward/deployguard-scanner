@@ -6,44 +6,12 @@
   <component name="ChangeListManager">
     <list default="true" id="ccc586e5-8761-4b70-b433-6fd2e04ca1e9" name="Changes" comment="chore : gitignore test">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Dockerfile" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/__init__.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/api_client.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/auth.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/cloudtrail.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/collectors.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/config.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/.editorconfig" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/.gitignore" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/Chart.yaml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/Dockerfile" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/Makefile" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/README.md" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/docker-compose.yml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/requirements.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/scan.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/src/__init__.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/src/api_client.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/src/config.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/src/image_scanner.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/src/k8s_scanner.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/src/utils.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/templates/NOTES.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/templates/_helpers.tpl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/templates/clusterrole.yaml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/templates/clusterrolebinding.yaml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/templates/configmap.yaml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/templates/cronjob-image.yaml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/templates/cronjob-k8s.yaml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/templates/job-manual.yaml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/templates/namespace.yaml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/templates/serviceaccount.yaml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/scanner/values.yaml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/conftest.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/conftest.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_config_loading.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_config_loading.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/app/scanners/cloud_scanner/api_client.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/scanners/cloud_scanner/api_client.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/app/scanners/cloud_scanner/scanner.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/scanners/cloud_scanner/scanner.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanners/dg_k8s_image/src/api_client.py" beforeDir="false" afterPath="$PROJECT_DIR$/scanners/dg_k8s_image/src/api_client.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/shared/orchestrator.py" beforeDir="false" afterPath="$PROJECT_DIR$/shared/orchestrator.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_api_clients.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_api_clients.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_orchestrator.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_orchestrator.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -84,10 +52,10 @@
     &quot;accountId&quot;: &quot;13313b77-898c-433c-b0be-185729d9c12e&quot;
   }
 }</component>
-  <component name="KubernetesApiPersistence"><![CDATA[{}]]></component>
-  <component name="KubernetesApiProvider"><![CDATA[{
-  "isMigrated": true
-}]]></component>
+  <component name="KubernetesApiPersistence">{}</component>
+  <component name="KubernetesApiProvider">{
+  &quot;isMigrated&quot;: true
+}</component>
   <component name="McpProjectServerCommands">
     <commands />
     <urls />
@@ -100,29 +68,29 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "RunOnceActivity.MCP Project settings loaded": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
-    "ai.playground.ignore.import.keys.banner.in.settings": "true",
-    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
-    "git-widget-placeholder": "feature/scanner-update-all",
-    "junie.onboarding.icon.badge.shown": "true",
-    "last_opened_file_path": "/Users/alison/Documents/PycharmProjects/deployguard-scanner",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "junie.application.models",
-    "to.speed.mode.migration.done": "true",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;ai.playground.ignore.import.keys.banner.in.settings&quot;: &quot;true&quot;,
+    &quot;com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;feature/scanner-update-all&quot;,
+    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/Users/alison/Documents/PycharmProjects/deployguard-scanner&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;junie.application.models&quot;,
+    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/dg-k8s" />
@@ -148,6 +116,7 @@
       <workItem from="1773584944074" duration="5788000" />
       <workItem from="1773654723450" duration="15000" />
       <workItem from="1773674280496" duration="6928000" />
+      <workItem from="1773684465119" duration="1283000" />
     </task>
     <task id="LOCAL-00001" summary="feat : Add initial project configuration files and CI workflows">
       <option name="closed" value="true" />

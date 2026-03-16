@@ -56,7 +56,6 @@ class CloudScanner:
             scanner_type=self.config.scanner_type,
             trigger_mode=trigger_mode,
             assigned_scan_id=assigned_scan_id,
-            scan_type=self.config.scan_type,
         )
 
         try:

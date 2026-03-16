@@ -31,21 +31,22 @@ class DeployGuardAPIClient:
         self.scanner_type: Optional[str] = None
         self.uploaded_files: List[str] = []
 
-    def start_scan(self, scanner_type: str, trigger_mode: str = "scheduled") -> str:
+    def start_scan(self, scanner_type: str, request_source: str = "scheduled") -> str:
         """
         스캔 시작 등록
         
         Args:
             scanner_type: k8s, image, aws
-            trigger_mode: manual, scheduled
+            request_source: manual, scheduled
             
         Returns:
             scan_id
         """
         data = self.engine_client.start_scan(
             json_body={
+                "cluster_id": self.config.cluster_id,
                 "scanner_type": scanner_type,
-                "trigger_mode": trigger_mode,
+                "request_source": request_source,
             },
         )
 
@@ -237,7 +238,8 @@ class DeployGuardAPIClient:
                 "status": "...",
             }
         """
-        scan_id = self.start_scan(scanner_type, trigger_mode)
+        request_source = "manual" if trigger_mode == "manual" else "scheduled"
+        scan_id = self.start_scan(scanner_type, request_source)
         s3_key = self.upload_scan_result(payload, filename)
         complete_result = self.complete_scan(meta)
 

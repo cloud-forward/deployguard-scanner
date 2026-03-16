@@ -20,9 +20,10 @@ class ScanOrchestrator:
         trigger_mode: str = "scheduled",
         **kwargs: Any,
     ) -> str:
+        request_source = "manual" if trigger_mode == "manual" else "scheduled"
         return self.api_client.start_scan(
             scanner_type=scanner_type,
-            trigger_mode=trigger_mode,
+            request_source=request_source,
             **kwargs,
         )
 
