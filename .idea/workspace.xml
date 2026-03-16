@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="ccc586e5-8761-4b70-b433-6fd2e04ca1e9" name="Changes" comment="test: Add comprehensive test suite for API clients, orchestrator, worker loops, and config loading">
+      <change afterPath="$PROJECT_DIR$/.idea/copilot.data.migration.ask2agent.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="ChangesViewManager">
+    <option name="groupingKeys">
+      <option value="directory" />
+      <option value="repository" />
+    </option>
+  </component>
+  <component name="CopilotPersistence">
+    <persistenceIdMap>
+      <entry key="_/Users/alison/Documents/PycharmProjects/deployguard-scanner" value="39k0dxPaakLgClXxZ8Y4Bogz1cV" />
+    </persistenceIdMap>
+  </component>
+  <component name="EmbeddingIndexingInfo">
+    <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_BRANCH_BY_REPOSITORY">
+      <map>
+        <entry key="$PROJECT_DIR$" value="feature/directory-refactor" />
+      </map>
+    </option>
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;jhwon7508&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/cloud-forward/deployguard-scanner.git&quot;,
+    &quot;accountId&quot;: &quot;13313b77-898c-433c-b0be-185729d9c12e&quot;
+  }
+}</component>
+  <component name="KubernetesApiPersistence"><![CDATA[{}]]></component>
+  <component name="KubernetesApiProvider"><![CDATA[{
+  "isMigrated": true
+}]]></component>
+  <component name="McpProjectServerCommands">
+    <commands />
+    <urls />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 4
+}</component>
+  <component name="ProjectId" id="39k0dxPaakLgClXxZ8Y4Bogz1cV" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.MCP Project settings loaded": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "ai.playground.ignore.import.keys.banner.in.settings": "true",
+    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
+    "git-widget-placeholder": "feature/scanner-update-all",
+    "junie.onboarding.icon.badge.shown": "true",
+    "last_opened_file_path": "/Users/alison/Documents/PycharmProjects/deployguard-scanner",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "junie.application.models",
+    "to.speed.mode.migration.done": "true",
+    "vue.rearranger.settings.migration": "true"
+  }
+}]]></component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/dg-k8s" />
+    </key>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-js-predefined-d6986cc7102b-9b0f141eb926-JavaScript-PY-253.30387.173" />
+        <option value="bundled-python-sdk-4762d8aabb82-6d6dccd035ac-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-253.30387.173" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="ccc586e5-8761-4b70-b433-6fd2e04ca1e9" name="Changes" comment="" />
+      <created>1771224851889</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1771224851889</updated>
+      <workItem from="1771224853077" duration="693000" />
+      <workItem from="1772605679691" duration="606000" />
+      <workItem from="1773584944074" duration="5788000" />
+      <workItem from="1773654723450" duration="15000" />
+      <workItem from="1773674280496" duration="5098000" />
+    </task>
+    <task id="LOCAL-00001" summary="feat : Add initial project configuration files and CI workflows">
+      <option name="closed" value="true" />
+      <created>1771225539105</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1771225539105</updated>
+    </task>
+    <task id="LOCAL-00002" summary="chore: Remove unused modules and CI configurations, update project structure">
+      <option name="closed" value="true" />
+      <created>1772606267839</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1772606267839</updated>
+    </task>
+    <task id="LOCAL-00003" summary="chore: Remove obsolete CI workflow files for unused modules">
+      <option name="closed" value="true" />
+      <created>1773589614777</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1773589614779</updated>
+    </task>
+    <task id="LOCAL-00004" summary="refactor: introduce scanners/{aws,k8s,image} structure (keep legacy modules for migration)">
+      <option name="closed" value="true" />
+      <created>1773589892964</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1773589892965</updated>
+    </task>
+    <task id="LOCAL-00005" summary="chore: Remove obsolete CI workflow configurations for dg-aws, dg-image, and dg-k8s">
+      <option name="closed" value="true" />
+      <created>1773678692671</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1773678692672</updated>
+    </task>
+    <task id="LOCAL-00006" summary="chore: Update .gitignore to include Python, environment, IDE, and OS-related exclusions">
+      <option name="closed" value="true" />
+      <created>1773678807354</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1773678807354</updated>
+    </task>
+    <task id="LOCAL-00007" summary="fix : Refactor DeployGuard API integration, deprecate legacy fields, and modularize shared logic">
+      <option name="closed" value="true" />
+      <created>1773679156128</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1773679156128</updated>
+    </task>
+    <task id="LOCAL-00008" summary="test: Add comprehensive test suite for API clients, orchestrator, worker loops, and config loading">
+      <option name="closed" value="true" />
+      <created>1773679183115</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1773679183115</updated>
+    </task>
+    <option name="localTasksCounter" value="9" />
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="feat : Add initial project configuration files and CI workflows" />
+    <MESSAGE value="feat: Update CI configuration for dg-aws and add initial pyproject.toml" />
+    <MESSAGE value="chore: Remove unused modules and CI configurations, update project structure" />
+    <MESSAGE value="chore: Remove obsolete CI workflow files for unused modules" />
+    <MESSAGE value="refactor: introduce scanners/{aws,k8s,image} structure (keep legacy modules for migration)" />
+    <MESSAGE value="chore: Remove obsolete CI workflow configurations for dg-aws, dg-image, and dg-k8s" />
+    <MESSAGE value="chore: Update .gitignore to include Python, environment, IDE, and OS-related exclusions" />
+    <MESSAGE value="fix : Refactor DeployGuard API integration, deprecate legacy fields, and modularize shared logic" />
+    <MESSAGE value="test: Add comprehensive test suite for API clients, orchestrator, worker loops, and config loading" />
+    <option name="LAST_COMMIT_MESSAGE" value="test: Add comprehensive test suite for API clients, orchestrator, worker loops, and config loading" />
+  </component>
+  <component name="github-copilot-workspace">
+    <instructionFileLocations>
+      <option value=".github/instructions" />
+    </instructionFileLocations>
+    <promptFileLocations>
+      <option value=".github/prompts" />
+    </promptFileLocations>
+  </component>
+</project>
