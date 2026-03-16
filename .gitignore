@@ -1,6 +1,27 @@
+# Python
 venv/
 __pycache__/
 *.pyc
+*.pyo
+*.pytest_cache/
+.mypy_cache/
+
+# Environment
 .env
+.env.*
+
+# Output
 output/
-*.json
+*.log
+*.tmp
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Helm
+*.tgz
+charts/
