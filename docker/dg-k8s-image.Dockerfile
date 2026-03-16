@@ -11,12 +11,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # 의존성 설치
-COPY requirements.txt .
+COPY scanners/dg_k8s_image/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 소스 코드 복사
-COPY src/ ./src/
-COPY scan.py .
+COPY scanners/dg_k8s_image/ ./scanners/dg_k8s_image/
+COPY shared/ ./shared/
 
 # Trivy DB 미리 다운로드
 RUN trivy image --download-db-only || true
@@ -26,6 +26,7 @@ RUN mkdir -p /app/output
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONPATH=/app
 
-ENTRYPOINT ["python", "scan.py"]
+ENTRYPOINT ["python", "-m", "scanners.dg_k8s_image.scan"]
 CMD ["scheduled"]

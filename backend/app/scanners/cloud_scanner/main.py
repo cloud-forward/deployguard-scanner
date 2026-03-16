@@ -6,8 +6,8 @@ import sys
 
 from .config import ScannerConfig
 from .scanner import CloudScanner
-from .shared.config import load_config
-from .shared.orchestrator import run_polling_loop
+from shared.config import load_config
+from shared.orchestrator import run_polling_loop
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,7 +49,7 @@ def _run_scheduled_loop(scanner: CloudScanner, config: ScannerConfig, mode: str)
 def main() -> int:
     try:
         if len(sys.argv) < 2:
-            print("Usage: python -m cloud_scanner.main [manual|scheduled]", file=sys.stderr)
+            print("Usage: python -m backend.app.scanners.cloud_scanner.main [manual|scheduled]", file=sys.stderr)
             return 1
 
         mode = sys.argv[1].strip().lower()

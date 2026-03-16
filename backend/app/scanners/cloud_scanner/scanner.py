@@ -19,7 +19,7 @@ from .collectors import (
     VPCCollector,
     build_aws_payload,
 )
-from .shared.orchestrator import ScanOrchestrator
+from shared.orchestrator import ScanOrchestrator
 
 logger = logging.getLogger(__name__)
 

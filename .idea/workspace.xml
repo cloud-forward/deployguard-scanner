@@ -4,13 +4,46 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="ccc586e5-8761-4b70-b433-6fd2e04ca1e9" name="Changes" comment="test: Add comprehensive test suite for API clients, orchestrator, worker loops, and config loading">
-      <change afterPath="$PROJECT_DIR$/.idea/copilot.data.migration.ask2agent.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    <list default="true" id="ccc586e5-8761-4b70-b433-6fd2e04ca1e9" name="Changes" comment="chore : gitignore test">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Dockerfile" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/api_client.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/auth.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/cloudtrail.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/collectors.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/config.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/.editorconfig" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/.gitignore" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/Chart.yaml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/Dockerfile" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/Makefile" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/docker-compose.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/requirements.txt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/scan.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/src/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/src/api_client.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/src/config.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/src/image_scanner.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/src/k8s_scanner.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/src/utils.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/templates/NOTES.txt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/templates/_helpers.tpl" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/templates/clusterrole.yaml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/templates/clusterrolebinding.yaml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/templates/configmap.yaml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/templates/cronjob-image.yaml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/templates/cronjob-k8s.yaml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/templates/job-manual.yaml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/templates/namespace.yaml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/templates/serviceaccount.yaml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanner/values.yaml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/conftest.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/conftest.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_config_loading.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_config_loading.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -114,7 +147,7 @@
       <workItem from="1772605679691" duration="606000" />
       <workItem from="1773584944074" duration="5788000" />
       <workItem from="1773654723450" duration="15000" />
-      <workItem from="1773674280496" duration="5098000" />
+      <workItem from="1773674280496" duration="6928000" />
     </task>
     <task id="LOCAL-00001" summary="feat : Add initial project configuration files and CI workflows">
       <option name="closed" value="true" />
@@ -180,7 +213,15 @@
       <option name="project" value="LOCAL" />
       <updated>1773679183115</updated>
     </task>
-    <option name="localTasksCounter" value="9" />
+    <task id="LOCAL-00009" summary="chore : gitignore test">
+      <option name="closed" value="true" />
+      <created>1773679414003</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1773679414003</updated>
+    </task>
+    <option name="localTasksCounter" value="10" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -196,7 +237,8 @@
     <MESSAGE value="chore: Update .gitignore to include Python, environment, IDE, and OS-related exclusions" />
     <MESSAGE value="fix : Refactor DeployGuard API integration, deprecate legacy fields, and modularize shared logic" />
     <MESSAGE value="test: Add comprehensive test suite for API clients, orchestrator, worker loops, and config loading" />
-    <option name="LAST_COMMIT_MESSAGE" value="test: Add comprehensive test suite for API clients, orchestrator, worker loops, and config loading" />
+    <MESSAGE value="chore : gitignore test" />
+    <option name="LAST_COMMIT_MESSAGE" value="chore : gitignore test" />
   </component>
   <component name="github-copilot-workspace">
     <instructionFileLocations>

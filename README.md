@@ -125,7 +125,7 @@ Python을 사용하는 이유:
 
 예시:
 
-    helm install deployguard-scanner ./helm
+    helm install deployguard-scanner ./scanners/dg_k8s_image
 
 ------------------------------------------------------------------------
 

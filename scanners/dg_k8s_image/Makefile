@@ -22,19 +22,19 @@ install:
 	pip install -r requirements.txt
 
 scan-k8s:
-	CLUSTER_ID=$(CLUSTER_ID) API_URL=$(API_URL) DG_SCANNER_TYPE=k8s python scan.py scheduled
+	CLUSTER_ID=$(CLUSTER_ID) API_URL=$(API_URL) DG_SCANNER_TYPE=k8s python -m scanners.dg_k8s_image.scan scheduled
 
 scan-image:
-	CLUSTER_ID=$(CLUSTER_ID) API_URL=$(API_URL) DG_SCANNER_TYPE=image python scan.py scheduled
+	CLUSTER_ID=$(CLUSTER_ID) API_URL=$(API_URL) DG_SCANNER_TYPE=image python -m scanners.dg_k8s_image.scan scheduled
 
 scan-all:
-	CLUSTER_ID=$(CLUSTER_ID) API_URL=$(API_URL) DG_SCANNER_TYPE=all python scan.py scheduled
+	CLUSTER_ID=$(CLUSTER_ID) API_URL=$(API_URL) DG_SCANNER_TYPE=all python -m scanners.dg_k8s_image.scan scheduled
 
 scan-manual:
-	CLUSTER_ID=$(CLUSTER_ID) API_URL=$(API_URL) python scan.py manual
+	CLUSTER_ID=$(CLUSTER_ID) API_URL=$(API_URL) python -m scanners.dg_k8s_image.scan manual
 
 build:
-	docker build -t $(IMAGE_NAME):$(IMAGE_TAG) .
+	docker build -f ../../docker/dg-k8s-image.Dockerfile -t $(IMAGE_NAME):$(IMAGE_TAG) ../..
 
 push:
 	docker push $(IMAGE_NAME):$(IMAGE_TAG)

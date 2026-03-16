@@ -4,8 +4,8 @@ import logging
 from typing import Any, Dict, Optional
 
 from .config import ScannerConfig
-from .shared.api_client import EngineApiClient
-from .shared.uploader import JsonResultUploader
+from shared.api_client import EngineApiClient
+from shared.uploader import JsonResultUploader
 
 logger = logging.getLogger(__name__)
 

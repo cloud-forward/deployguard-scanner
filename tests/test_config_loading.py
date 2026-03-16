@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-import config as aws_config
+from backend.app.scanners.cloud_scanner import config as aws_config
 from tests.conftest import load_scanner_src_module
 
 

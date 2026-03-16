@@ -3,11 +3,11 @@
 DeployGuard Scanner - K8s + Image 통합 스캔
 
 사용 예시:
-    python scan.py scheduled        # 정기 스캔 (기본)
-    python scan.py manual           # 수동 스캔
+    python -m scanners.dg_k8s_image.scan scheduled        # 정기 스캔 (기본)
+    python -m scanners.dg_k8s_image.scan manual           # 수동 스캔
     
-    DG_SCANNER_TYPE=k8s python scan.py scheduled    # K8s만
-    DG_SCANNER_TYPE=image python scan.py scheduled  # Image만
+    DG_SCANNER_TYPE=k8s python -m scanners.dg_k8s_image.scan scheduled    # K8s만
+    DG_SCANNER_TYPE=image python -m scanners.dg_k8s_image.scan scheduled  # Image만
 """
 from __future__ import annotations
 
@@ -16,18 +16,12 @@ import json
 import os
 import sys
 
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT_DIR = os.path.dirname(CURRENT_DIR)
-
-sys.path.insert(0, ROOT_DIR)
-sys.path.insert(0, CURRENT_DIR)
-
 from shared.config import load_config
 from shared.orchestrator import ScanOrchestrator, run_polling_loop
-from src.api_client import DeployGuardAPIClient
-from src.config import ScannerConfig
-from src.k8s_scanner import K8sScanner
-from src.image_scanner import ImageScanner
+from scanners.dg_k8s_image.src.api_client import DeployGuardAPIClient
+from scanners.dg_k8s_image.src.config import ScannerConfig
+from scanners.dg_k8s_image.src.image_scanner import ImageScanner
+from scanners.dg_k8s_image.src.k8s_scanner import K8sScanner
 
 
 def main() -> int:

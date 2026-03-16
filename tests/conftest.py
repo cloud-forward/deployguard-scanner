@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import sys
 import types
@@ -8,6 +9,8 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+AWS_ROOT = ROOT / "backend" / "app" / "scanners" / "cloud_scanner"
+K8S_IMAGE_ROOT = ROOT / "scanners" / "dg_k8s_image"
 
 
 def _ensure_package(name: str, path: Path) -> types.ModuleType:
@@ -34,28 +37,15 @@ def _load_module(module_name: str, path: Path):
 
 
 def load_root_module(name: str):
-    package_name = "deployguard_testpkg"
-    _ensure_package(package_name, ROOT)
-    _ensure_package(f"{package_name}.shared", ROOT / "shared")
-    _load_module(f"{package_name}.config", ROOT / "config.py")
-    return _load_module(f"{package_name}.{name}", ROOT / f"{name}.py")
+    return importlib.import_module(f"backend.app.scanners.cloud_scanner.{name}")
 
 
 def load_scanner_src_module(name: str):
-    package_name = "deployguard_scanner_testpkg"
-    _ensure_package(package_name, ROOT / "scanner")
-    _ensure_package(f"{package_name}.src", ROOT / "scanner" / "src")
-    _load_module(f"{package_name}.src.config", ROOT / "scanner" / "src" / "config.py")
-    return _load_module(f"{package_name}.src.{name}", ROOT / "scanner" / "src" / f"{name}.py")
+    return importlib.import_module(f"scanners.dg_k8s_image.src.{name}")
 
 
 def load_scanner_module(name: str):
-    package_name = "deployguard_scanner_testpkg"
-    _ensure_package(package_name, ROOT / "scanner")
-    _ensure_package(f"{package_name}.src", ROOT / "scanner" / "src")
-    _load_module(f"{package_name}.src.config", ROOT / "scanner" / "src" / "config.py")
-    _load_module(f"{package_name}.src.api_client", ROOT / "scanner" / "src" / "api_client.py")
-    return _load_module(f"{package_name}.{name}", ROOT / "scanner" / f"{name}.py")
+    return importlib.import_module(f"scanners.dg_k8s_image.{name}")
 
 
 class Response:

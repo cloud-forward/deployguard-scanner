@@ -2,7 +2,9 @@ version: '3.8'
 
 services:
   scanner:
-    build: .
+    build:
+      context: ../..
+      dockerfile: docker/dg-k8s-image.Dockerfile
     environment:
       - CLUSTER_ID=${CLUSTER_ID:-test-cluster}
       - DG_API_ENDPOINT=${DG_API_ENDPOINT:-https://analysis.deployguard.org}
@@ -19,7 +21,9 @@ services:
 
   # K8s만 스캔
   scanner-k8s:
-    build: .
+    build:
+      context: ../..
+      dockerfile: docker/dg-k8s-image.Dockerfile
     environment:
       - CLUSTER_ID=${CLUSTER_ID:-test-cluster}
       - DG_API_ENDPOINT=${DG_API_ENDPOINT:-https://analysis.deployguard.org}
@@ -35,7 +39,9 @@ services:
 
   # Image만 스캔
   scanner-image:
-    build: .
+    build:
+      context: ../..
+      dockerfile: docker/dg-k8s-image.Dockerfile
     environment:
       - CLUSTER_ID=${CLUSTER_ID:-test-cluster}
       - DG_API_ENDPOINT=${DG_API_ENDPOINT:-https://analysis.deployguard.org}
