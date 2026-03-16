@@ -12,6 +12,10 @@ class FakeApiClient:
     def report_error(self, message: str, detail=None) -> None:
         self.calls.append((message, detail))
 
+    def start_scan(self, **kwargs):
+        self.calls.append(("start_scan", kwargs))
+        return "scan-1"
+
 
 def test_orchestrator_handle_failure_reports_once() -> None:
     api_client = FakeApiClient()
@@ -67,3 +71,15 @@ def test_run_polling_loop_repeats_until_interrupted(monkeypatch: pytest.MonkeyPa
 
     assert len(handled) == 3
     assert sleeps == [7, 7]
+
+
+def test_orchestrator_start_scan_maps_trigger_mode_to_request_source() -> None:
+    api_client = FakeApiClient()
+    orchestrator = ScanOrchestrator(config=None, api_client=api_client)
+
+    result = orchestrator.start_scan(scanner_type="aws", trigger_mode="manual")
+
+    assert result == "scan-1"
+    assert api_client.calls == [
+        ("start_scan", {"scanner_type": "aws", "request_source": "manual"})
+    ]
