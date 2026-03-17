@@ -1,0 +1,28 @@
+✅ DeployGuard AWS Scanner 배포 완료!
+
+모드: {{ .Values.mode }}
+
+{{- if eq .Values.mode "cronjob" }}
+
+🕐 CronJob 스케줄: {{ .Values.cronjob.schedule }}
+
+수동 즉시 실행:
+  kubectl create job --from=cronjob/{{ include "deployguard-aws-scanner.fullname" . }} \
+    manual-run-$(date +%s) -n {{ .Release.Namespace }}
+
+{{- else if eq .Values.mode "deployment" }}
+
+🔄 Polling Daemon이 실행 중입니다 (replicas: {{ .Values.deployment.replicas }})
+
+로그 확인:
+  kubectl logs -f deployment/{{ include "deployguard-aws-scanner.fullname" . }} \
+    -n {{ .Release.Namespace }}
+
+{{- end }}
+
+상태 확인:
+  kubectl get all -n {{ .Release.Namespace }} \
+    -l app.kubernetes.io/instance={{ .Release.Name }}
+
+DeployGuard 대시보드에서 스캔 결과를 확인하세요:
+  {{ .Values.deployguard.apiEndpoint }}

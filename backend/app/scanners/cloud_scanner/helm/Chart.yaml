@@ -1,0 +1,13 @@
+apiVersion: v2
+name: deployguard-aws-scanner
+description: DeployGuard AWS Cloud Scanner — polling 기반 AWS 인프라 스냅샷 수집기
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - deployguard
+  - security
+  - aws
+  - scanner
+maintainers:
+  - name: DeployGuard

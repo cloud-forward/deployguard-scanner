@@ -1,0 +1,124 @@
+# ============================================================
+# DeployGuard Scanner Configuration
+# ============================================================
+
+# 필수 설정 (설치 시 반드시 제공해야 함)
+clusterId: ""           # 고객이 설정하는 클러스터 ID
+clusterName: ""         # 클러스터 표시 이름 (없으면 clusterId 사용)
+
+# DeployGuard API 설정
+api:
+  endpoint: "https://analysis.deployguard.org"
+  url: ""               # deprecated alias
+  token: ""             # API 인증 토큰
+
+# 스캐너 이미지 설정
+image:
+  repository: deployguard/scanner
+  tag: "3.0.0"
+  pullPolicy: IfNotPresent
+
+# 이미지 Pull Secret (private registry 사용 시)
+imagePullSecrets: []
+# - name: regcred
+
+# ============================================================
+# K8s Scanner 설정
+# ============================================================
+k8sScanner:
+  enabled: true
+  
+  # CronJob 스케줄 (기본: 30분마다)
+  schedule: "*/30 * * * *"
+  
+  # 네임스페이스 필터링
+  namespaces: []                    # 빈 배열 = 모든 네임스페이스
+  excludeNamespaces:
+    - kube-public
+    - kube-node-lease
+  includeSystemNamespaces: false    # kube-system 포함 여부
+  
+  # 리소스 제한
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# ============================================================
+# Image Scanner 설정
+# ============================================================
+imageScanner:
+  enabled: true
+  
+  # CronJob 스케줄 (기본: 6시간마다)
+  schedule: "0 */6 * * *"
+  
+  # Trivy 설정
+  trivy:
+    enabled: true
+    severity: "CRITICAL,HIGH,MEDIUM,LOW"
+    timeout: "10m"
+  
+  # EPSS 점수 조회
+  epss:
+    enabled: true
+  
+  # 최대 스캔 이미지 수
+  maxImagesPerScan: 100
+  
+  # 리소스 제한 (Image 스캔은 더 많은 리소스 필요)
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+# ============================================================
+# 공통 설정
+# ============================================================
+
+# 네임스페이스 (스캐너가 설치될 네임스페이스)
+namespace: deployguard
+
+# ServiceAccount 설정
+serviceAccount:
+  create: true
+  name: deployguard-scanner
+  annotations: {}
+
+# RBAC 설정
+rbac:
+  create: true
+
+# CronJob 공통 설정
+cronJob:
+  # 동시 실행 정책
+  concurrencyPolicy: Forbid
+  # 실패 시 재시도
+  backoffLimit: 3
+  # Job 히스토리
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  # 타임아웃 (초)
+  activeDeadlineSeconds: 1800
+
+# Pod 설정
+pod:
+  annotations: {}
+  labels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# 로컬 저장 설정 (디버깅용)
+localOutput:
+  enabled: false
+  path: /app/output
+
+# 로깅 레벨
+logLevel: INFO

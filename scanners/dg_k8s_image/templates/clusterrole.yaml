@@ -1,0 +1,65 @@
+{{- if .Values.rbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "deployguard-scanner.fullname" . }}
+  labels:
+    {{- include "deployguard-scanner.labels" . | nindent 4 }}
+rules:
+  # Pods - 보안 분석의 핵심
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+    verbs: ["get", "list", "watch"]
+  
+  # 기본 리소스
+  - apiGroups: [""]
+    resources:
+      - namespaces
+      - nodes
+      - services
+      - endpoints
+      - configmaps
+      - secrets
+      - serviceaccounts
+      - persistentvolumes
+      - persistentvolumeclaims
+    verbs: ["get", "list", "watch"]
+  
+  # Apps 리소스
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - daemonsets
+      - statefulsets
+      - replicasets
+    verbs: ["get", "list", "watch"]
+  
+  # Batch 리소스
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["get", "list", "watch"]
+  
+  # RBAC 리소스 (권한 분석)
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources:
+      - roles
+      - rolebindings
+      - clusterroles
+      - clusterrolebindings
+    verbs: ["get", "list", "watch"]
+  
+  # 네트워크 리소스
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+      - networkpolicies
+    verbs: ["get", "list", "watch"]
+  
+  # 버전 정보 (클러스터 타입 감지)
+  - nonResourceURLs: ["/version", "/version/*"]
+    verbs: ["get"]
+{{- end }}
