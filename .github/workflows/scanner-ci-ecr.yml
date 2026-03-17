@@ -23,7 +23,7 @@ jobs:
         target:
           - name: aws
             dockerfile: backend/app/scanners/cloud_scanner/Dockerfile
-          - name: k8s
+          - name: k8s-image
             dockerfile: docker/dg-k8s-image.Dockerfile
 
     steps:
