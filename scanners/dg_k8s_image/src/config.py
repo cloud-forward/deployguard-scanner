@@ -71,7 +71,7 @@ class ScannerConfig:
     # 권장 스케줄
     k8s_recommended_cron_schedule: str = "*/30 * * * *"
     image_recommended_cron_schedule: str = "0 */6 * * *"
-    scan_poll_path: str = "/api/scans/poll"
+    scan_poll_path: str = "/api/v1/scans/pending"
 
     @staticmethod
     def from_env() -> "ScannerConfig":
@@ -104,7 +104,7 @@ class ScannerConfig:
             namespaces=_get_csv_list("DG_NAMESPACES"),
             exclude_namespaces=_get_csv_list(
                 "DG_EXCLUDE_NAMESPACES",
-                ["kube-public", "kube-node-lease"]
+                ["kube-system", "kube-public", "kube-node-lease"]
             ),
             include_system_namespaces=_get_bool("DG_INCLUDE_SYSTEM_NAMESPACES", False),
             trivy_enabled=_get_bool("DG_TRIVY_ENABLED", True),
@@ -122,5 +122,5 @@ class ScannerConfig:
             output_filename=os.getenv("DG_OUTPUT_FILENAME"),
             k8s_recommended_cron_schedule=os.getenv("DG_K8S_CRON_SCHEDULE", "*/30 * * * *"),
             image_recommended_cron_schedule=os.getenv("DG_IMAGE_CRON_SCHEDULE", "0 */6 * * *"),
-            scan_poll_path=os.getenv("DG_SCAN_POLL_PATH", "/api/scans/poll"),
+            scan_poll_path=os.getenv("DG_SCAN_POLL_PATH", "/api/v1/scans/pending"),
         )

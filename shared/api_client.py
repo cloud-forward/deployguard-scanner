@@ -11,19 +11,27 @@ class EngineApiClient:
         self.config = config
         self.base_url = config.api_url.rstrip("/")
 
-    def start_scan(self, json_body: Dict[str, Any]) -> Dict[str, Any]:
+    def start_scan(
+        self,
+        json_body: Dict[str, Any],
+        scan_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        if scan_id:
+            url = f"{self.base_url}/api/v1/scans/{scan_id}/start"
+        else:
+            url = f"{self.base_url}/api/scans/start"
         response = self._request_with_retry(
             method="POST",
-            url=f"{self.base_url}/api/scans/start",
+            url=url,
             json_body=json_body,
         )
         return response.json()
 
-    def poll_scan(self, path: str, json_body: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def poll_scan(self, path: str, query_params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         response = self._request_with_retry(
-            method="POST",
+            method="GET",
             url=f"{self.base_url}{path}",
-            json_body=json_body,
+            query_params=query_params,
             allow_statuses={204},
         )
         if response.status_code == 204:
@@ -33,7 +41,7 @@ class EngineApiClient:
     def get_upload_url(self, scan_id: str, json_body: Dict[str, Any]) -> Dict[str, Any]:
         response = self._request_with_retry(
             method="POST",
-            url=f"{self.base_url}/api/scans/{scan_id}/upload-url",
+            url=f"{self.base_url}/api/v1/scans/{scan_id}/upload-url",
             json_body=json_body,
         )
         return response.json()
@@ -41,15 +49,7 @@ class EngineApiClient:
     def complete_scan(self, scan_id: str, json_body: Dict[str, Any]) -> Dict[str, Any]:
         response = self._request_with_retry(
             method="POST",
-            url=f"{self.base_url}/api/scans/{scan_id}/complete",
-            json_body=json_body,
-        )
-        return response.json()
-
-    def report_error(self, scan_id: str, json_body: Dict[str, Any]) -> Dict[str, Any]:
-        response = self._request_with_retry(
-            method="POST",
-            url=f"{self.base_url}/api/scans/{scan_id}/error",
+            url=f"{self.base_url}/api/v1/scans/{scan_id}/complete",
             json_body=json_body,
         )
         return response.json()
@@ -59,6 +59,7 @@ class EngineApiClient:
         method: str,
         url: str,
         json_body: Optional[Dict[str, Any]] = None,
+        query_params: Optional[Dict[str, Any]] = None,
         timeout: Optional[int] = None,
         allow_statuses: Optional[set[int]] = None,
     ) -> requests.Response:
@@ -72,6 +73,7 @@ class EngineApiClient:
                     method=method,
                     url=url,
                     json=json_body,
+                    params=query_params,
                     headers=self._headers(),
                     timeout=request_timeout,
                 )

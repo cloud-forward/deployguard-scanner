@@ -178,9 +178,12 @@ class ImageScanner:
         return self._run_scan(trigger_mode="scheduled")
 
     def run_worker_scan(self, scan_id: str, trigger_mode: str = "scheduled") -> Dict[str, Any]:
-        return self._run_scan(trigger_mode=trigger_mode, assigned_scan_id=scan_id)
+        api_client = DeployGuardAPIClient(self.config)
+        api_client.bind_scan(scan_id, "image")
+        self.scan_id = scan_id
+        return self._execute_scan(api_client=api_client, scan_id=scan_id, trigger_mode=trigger_mode)
 
-    def _run_scan(self, trigger_mode: str, assigned_scan_id: Optional[str] = None) -> Dict[str, Any]:
+    def _run_scan(self, trigger_mode: str) -> Dict[str, Any]:
         """실제 스캔 실행"""
         print(f"\n{'='*60}")
         print(f"DeployGuard Image Scanner v3.0.0")
@@ -190,142 +193,55 @@ class ImageScanner:
         print(f"EPSS: {'enabled' if self.config.epss_enabled else 'disabled'}")
         print(f"{'='*60}\n")
 
-        # 1. API 클라이언트 초기화
         api_client = DeployGuardAPIClient(self.config)
         orchestrator = ScanOrchestrator(self.config, api_client)
-
-        # 2. 스캔 시작 등록
-        scan_id = orchestrator.bind_or_start_scan(
+        scan_id = orchestrator.start_scan(
             scanner_type="image",
             trigger_mode=trigger_mode,
-            assigned_scan_id=assigned_scan_id,
         )
         self.scan_id = scan_id
+        return self._execute_scan(api_client=api_client, scan_id=scan_id, trigger_mode=trigger_mode)
 
-        # 3. 이미지 수집 및 스캔
-        try:
-            images = self._collect_images()
-        except KeyboardInterrupt as exc:
-            orchestrator.handle_failure(
-                exc,
-                phase="execution",
-                detail={
-                    "scanner_type": "image",
-                    "trigger_mode": trigger_mode,
-                },
-            )
-            raise
-        except Exception as exc:
-            orchestrator.handle_failure(
-                exc,
-                phase="execution",
-                detail={
-                    "scanner_type": "image",
-                    "trigger_mode": trigger_mode,
-                },
-            )
-            raise
+    def _execute_scan(
+        self,
+        api_client: DeployGuardAPIClient,
+        scan_id: str,
+        trigger_mode: str,
+    ) -> Dict[str, Any]:
+        orchestrator = ScanOrchestrator(self.config, api_client)
+        images = self._collect_images()
         print(f"[*] Found {len(images)} unique images")
 
         scanned_images = []
         scan_limit = min(len(images), self.config.max_images_per_scan)
 
-        try:
-            for idx, img_info in enumerate(images[:scan_limit]):
-                print(f"[{idx+1}/{scan_limit}] Scanning: {img_info['image_ref'][:60]}...")
-                scanned = self._scan_single_image(img_info)
-                scanned_images.append(scanned)
-        except KeyboardInterrupt as exc:
-            orchestrator.handle_failure(
-                exc,
-                phase="execution",
-                detail={
-                    "scanner_type": "image",
-                    "trigger_mode": trigger_mode,
-                },
-            )
-            raise
-        except Exception as exc:
-            orchestrator.handle_failure(
-                exc,
-                phase="execution",
-                detail={
-                    "scanner_type": "image",
-                    "trigger_mode": trigger_mode,
-                },
-            )
-            raise
+        for idx, img_info in enumerate(images[:scan_limit]):
+            print(f"[{idx+1}/{scan_limit}] Scanning: {img_info['image_ref'][:60]}...")
+            scanned = self._scan_single_image(img_info)
+            scanned_images.append(scanned)
 
-        # 4. 페이로드 생성
         payload = self._build_payload(
             scan_id=scan_id,
             trigger_mode=trigger_mode,
             images=scanned_images,
         )
 
-        # 5. 로컬 저장 (옵션)
         local_file = None
         if self.config.save_local_copy:
             local_file = self._save_local_copy(payload, scan_id)
 
-        # 6. S3 업로드
-        try:
-            uploaded_files = [orchestrator.upload_result(payload, self.config.upload_file_name)]
-        except KeyboardInterrupt as exc:
-            orchestrator.handle_failure(
-                exc,
-                phase="upload",
-                detail={
-                    "scanner_type": "image",
-                    "trigger_mode": trigger_mode,
-                },
-            )
-            raise
-        except Exception as exc:
-            orchestrator.handle_failure(
-                exc,
-                phase="upload",
-                detail={
-                    "scanner_type": "image",
-                    "trigger_mode": trigger_mode,
-                },
-            )
-            raise
+        uploaded_files = [orchestrator.upload_result(payload, self.config.upload_file_name)]
 
-        # 7. 스캔 완료 알림
         summary = payload.get("summary", {})
-        try:
-            complete_result = orchestrator.complete_scan(
-                meta={
-                    "scanner_type": "image",
-                    "trigger_mode": trigger_mode,
-                    "total_images": summary.get("total_images", 0),
-                    "scanned_images": summary.get("scanned_images", 0),
-                    "vulnerability_counts": summary.get("by_severity", {}),
-                }
-            )
-        except KeyboardInterrupt as exc:
-            orchestrator.handle_failure(
-                exc,
-                phase="complete",
-                detail={
-                    "scanner_type": "image",
-                    "trigger_mode": trigger_mode,
-                    "uploaded_files": uploaded_files,
-                },
-            )
-            raise
-        except Exception as exc:
-            orchestrator.handle_failure(
-                exc,
-                phase="complete",
-                detail={
-                    "scanner_type": "image",
-                    "trigger_mode": trigger_mode,
-                    "uploaded_files": uploaded_files,
-                },
-            )
-            raise
+        complete_result = orchestrator.complete_scan(
+            meta={
+                "scanner_type": "image",
+                "trigger_mode": trigger_mode,
+                "total_images": summary.get("total_images", 0),
+                "scanned_images": summary.get("scanned_images", 0),
+                "vulnerability_counts": summary.get("by_severity", {}),
+            }
+        )
 
         return orchestrator.build_result(
             scan_id=scan_id,

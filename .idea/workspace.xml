@@ -4,14 +4,42 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="ccc586e5-8761-4b70-b433-6fd2e04ca1e9" name="Changes" comment="chore : gitignore test">
+    <list default="true" id="ccc586e5-8761-4b70-b433-6fd2e04ca1e9" name="Changes" comment="test: add unit tests for start_scan behavior and request_source mapping">
+      <change afterPath="$PROJECT_DIR$/.ai/mcp/mcp.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/scanners/dg_k8s_image/templates/deployment-image.yaml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/scanners/dg_k8s_image/templates/deployment-k8s.yaml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/scanners/dg_k8s_image/templates/secret.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/backend/app/scanners/cloud_scanner/api_client.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/scanners/cloud_scanner/api_client.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/app/scanners/cloud_scanner/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/scanners/cloud_scanner/config.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/app/scanners/cloud_scanner/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/scanners/cloud_scanner/main.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/backend/app/scanners/cloud_scanner/scanner.py" beforeDir="false" afterPath="$PROJECT_DIR$/backend/app/scanners/cloud_scanner/scanner.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docker-compose.yml" beforeDir="false" afterPath="$PROJECT_DIR$/docker-compose.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docker/aws-cloud-scanner.Dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/docker/aws-scanner.Dockerfile" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docker/dg-k8s-image.Dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/docker/k8s-image.Dockerfile" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanners/dg_k8s_image/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/scanners/dg_k8s_image/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanners/dg_k8s_image/docker-compose.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanners/dg_k8s_image/scan.py" beforeDir="false" afterPath="$PROJECT_DIR$/scanners/dg_k8s_image/scan.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/scanners/dg_k8s_image/src/api_client.py" beforeDir="false" afterPath="$PROJECT_DIR$/scanners/dg_k8s_image/src/api_client.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanners/dg_k8s_image/src/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/scanners/dg_k8s_image/src/config.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanners/dg_k8s_image/src/image_scanner.py" beforeDir="false" afterPath="$PROJECT_DIR$/scanners/dg_k8s_image/src/image_scanner.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanners/dg_k8s_image/src/k8s_scanner.py" beforeDir="false" afterPath="$PROJECT_DIR$/scanners/dg_k8s_image/src/k8s_scanner.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanners/dg_k8s_image/templates/NOTES.txt" beforeDir="false" afterPath="$PROJECT_DIR$/scanners/dg_k8s_image/templates/NOTES.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanners/dg_k8s_image/templates/_helpers.tpl" beforeDir="false" afterPath="$PROJECT_DIR$/scanners/dg_k8s_image/templates/_helpers.tpl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanners/dg_k8s_image/templates/configmap.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/scanners/dg_k8s_image/templates/configmap.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanners/dg_k8s_image/templates/cronjob-image.yaml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanners/dg_k8s_image/templates/cronjob-k8s.yaml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanners/dg_k8s_image/templates/job-manual.yaml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/scanners/dg_k8s_image/values.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/scanners/dg_k8s_image/values.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/shared/api_client.py" beforeDir="false" afterPath="$PROJECT_DIR$/shared/api_client.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/shared/orchestrator.py" beforeDir="false" afterPath="$PROJECT_DIR$/shared/orchestrator.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/tests/test_api_clients.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_api_clients.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_config_loading.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_config_loading.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/tests/test_orchestrator.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_orchestrator.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_shared_api_flow.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_shared_api_flow.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_worker_loops.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_worker_loops.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -116,7 +144,8 @@
       <workItem from="1773584944074" duration="5788000" />
       <workItem from="1773654723450" duration="15000" />
       <workItem from="1773674280496" duration="6928000" />
-      <workItem from="1773684465119" duration="1283000" />
+      <workItem from="1773684465119" duration="1402000" />
+      <workItem from="1773725192907" duration="14304000" />
     </task>
     <task id="LOCAL-00001" summary="feat : Add initial project configuration files and CI workflows">
       <option name="closed" value="true" />
@@ -190,11 +219,75 @@
       <option name="project" value="LOCAL" />
       <updated>1773679414003</updated>
     </task>
-    <option name="localTasksCounter" value="10" />
+    <task id="LOCAL-00010" summary="refactor: replace &quot;trigger_mode&quot; with &quot;request_source&quot; across scanner modules">
+      <option name="closed" value="true" />
+      <created>1773687454880</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1773687454880</updated>
+    </task>
+    <task id="LOCAL-00011" summary="test: add unit tests for start_scan behavior and request_source mapping">
+      <option name="closed" value="true" />
+      <created>1773687463766</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1773687463766</updated>
+    </task>
+    <option name="localTasksCounter" value="12" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="RECENT_FILTERS">
+      <map>
+        <entry key="Branch">
+          <value>
+            <list>
+              <RecentGroup>
+                <option name="FILTER_VALUES">
+                  <option value="origin/feature/scanner-update-all" />
+                </option>
+              </RecentGroup>
+              <RecentGroup>
+                <option name="FILTER_VALUES">
+                  <option value="origin/feature/k8s-image-scanner-v3" />
+                </option>
+              </RecentGroup>
+              <RecentGroup>
+                <option name="FILTER_VALUES">
+                  <option value="origin/feature/scanner-improvements-selly" />
+                </option>
+              </RecentGroup>
+            </list>
+          </value>
+        </entry>
+      </map>
+    </option>
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State>
+              <option name="FILTERS">
+                <map>
+                  <entry key="branch">
+                    <value>
+                      <list>
+                        <option value="origin/feature/scanner-update-all" />
+                      </list>
+                    </value>
+                  </entry>
+                </map>
+              </option>
+            </State>
+          </value>
+        </entry>
+      </map>
+    </option>
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="feat : Add initial project configuration files and CI workflows" />
@@ -207,7 +300,10 @@
     <MESSAGE value="fix : Refactor DeployGuard API integration, deprecate legacy fields, and modularize shared logic" />
     <MESSAGE value="test: Add comprehensive test suite for API clients, orchestrator, worker loops, and config loading" />
     <MESSAGE value="chore : gitignore test" />
-    <option name="LAST_COMMIT_MESSAGE" value="chore : gitignore test" />
+    <MESSAGE value="test: Add tests for start_scan behavior and request source mapping" />
+    <MESSAGE value="refactor: replace &quot;trigger_mode&quot; with &quot;request_source&quot; across scanner modules" />
+    <MESSAGE value="test: add unit tests for start_scan behavior and request_source mapping" />
+    <option name="LAST_COMMIT_MESSAGE" value="test: add unit tests for start_scan behavior and request_source mapping" />
   </component>
   <component name="github-copilot-workspace">
     <instructionFileLocations>

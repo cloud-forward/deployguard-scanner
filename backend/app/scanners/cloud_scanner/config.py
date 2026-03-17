@@ -98,14 +98,15 @@ class ScannerConfig:
     eks_cluster_names: List[str] = field(default_factory=list)
 
     aws_recommended_cron_schedule: str = "22 */4 * * *"
-    scan_poll_path: str = "/api/scans/poll"
+    scan_poll_path: str = "/api/v1/scans/pending"
 
     @staticmethod
     def from_env() -> "ScannerConfig":
         raw_cluster_id = os.getenv("DG_CLUSTER_ID") or os.getenv("CLUSTER_ID")
         region = os.getenv("AWS_REGION") or os.getenv("DG_REGION")
         api_url = (
-            os.getenv("DG_API_ENDPOINT")
+            os.getenv("API_BASE_URL")
+            or os.getenv("DG_API_ENDPOINT")
             or os.getenv("API_URL")
             or os.getenv("DG_API_URL")
             or os.getenv("DG_ENGINE_URL")
@@ -116,7 +117,7 @@ class ScannerConfig:
             name for name, value in {
                 "DG_CLUSTER_ID or CLUSTER_ID": raw_cluster_id,
                 "AWS_REGION or DG_REGION": region,
-                "DG_API_ENDPOINT or API_URL or DG_API_URL or DG_ENGINE_URL": api_url,
+                "API_BASE_URL or DG_API_ENDPOINT or API_URL or DG_API_URL or DG_ENGINE_URL": api_url,
             }.items()
             if not value
         ]
@@ -155,6 +156,11 @@ class ScannerConfig:
             os.getenv("DG_SCAN_TYPE", "full"),
             {"full", "incremental"},
         )
+        scanner_type = _validate_choice(
+            "SCANNER_TYPE",
+            os.getenv("SCANNER_TYPE", "aws"),
+            {"aws"},
+        )
 
         return ScannerConfig(
             cluster_id=cluster_id,
@@ -166,7 +172,7 @@ class ScannerConfig:
             external_id=os.getenv("DG_EXTERNAL_ID"),
             session_name=os.getenv("DG_SESSION_NAME", "DeployGuardCloudScanner"),
             assume_role_duration_seconds=int(os.getenv("DG_ASSUME_ROLE_DURATION", "3600")),
-            scanner_type="aws",
+            scanner_type=scanner_type,
             scan_type=scan_type,
             upload_file_name=os.getenv("DG_UPLOAD_FILE_NAME", "aws-snapshot.json"),
             http_timeout_seconds=int(os.getenv("DG_HTTP_TIMEOUT_SECONDS", "30")),
@@ -200,5 +206,5 @@ class ScannerConfig:
             s3_specified_buckets=_get_csv_list("DG_S3_SPECIFIED_BUCKETS"),
             eks_cluster_names=_get_csv_list("DG_EKS_CLUSTER_NAMES"),
             aws_recommended_cron_schedule=os.getenv("DG_AWS_CRON_SCHEDULE", "22 */4 * * *"),
-            scan_poll_path=os.getenv("DG_SCAN_POLL_PATH", "/api/scans/poll"),
+            scan_poll_path=os.getenv("DG_SCAN_POLL_PATH", "/api/v1/scans/pending"),
         )

@@ -77,6 +77,17 @@ def test_aws_config_prefers_dg_api_endpoint(monkeypatch: pytest.MonkeyPatch) -> 
     assert loaded.api_url == "https://primary.example.com"
 
 
+def test_aws_config_accepts_api_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DG_CLUSTER_ID", "f1e96491-a558-4403-b363-e0c68d9a8c22")
+    monkeypatch.setenv("AWS_REGION", "us-west-2")
+    monkeypatch.setenv("API_BASE_URL", "https://worker.example.com/")
+
+    loaded = aws_config.ScannerConfig.from_env()
+
+    assert loaded.api_url == "https://worker.example.com"
+    assert loaded.scan_poll_path == "/api/v1/scans/pending"
+
+
 def test_scanner_config_prefers_dg_api_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     scanner_config = load_scanner_src_module("config")
 
@@ -89,3 +100,25 @@ def test_scanner_config_prefers_dg_api_endpoint(monkeypatch: pytest.MonkeyPatch)
     loaded = scanner_config.ScannerConfig.from_env()
 
     assert loaded.api_url == "https://primary.example.com"
+
+
+def test_scanner_config_defaults_to_pending_claim_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    scanner_config = load_scanner_src_module("config")
+
+    monkeypatch.setenv("DG_CLUSTER_ID", "cluster-metadata-id")
+    monkeypatch.setenv("DG_API_URL", "https://engine.example.com/")
+
+    loaded = scanner_config.ScannerConfig.from_env()
+
+    assert loaded.scan_poll_path == "/api/v1/scans/pending"
+
+
+def test_scanner_config_defaults_exclude_kube_system(monkeypatch: pytest.MonkeyPatch) -> None:
+    scanner_config = load_scanner_src_module("config")
+
+    monkeypatch.setenv("DG_CLUSTER_ID", "cluster-metadata-id")
+    monkeypatch.setenv("DG_API_URL", "https://engine.example.com/")
+
+    loaded = scanner_config.ScannerConfig.from_env()
+
+    assert loaded.exclude_namespaces == ["kube-system", "kube-public", "kube-node-lease"]

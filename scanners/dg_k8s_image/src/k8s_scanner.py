@@ -150,9 +150,12 @@ class K8sScanner:
         return self._run_scan(trigger_mode="scheduled")
 
     def run_worker_scan(self, scan_id: str, trigger_mode: str = "scheduled") -> Dict[str, Any]:
-        return self._run_scan(trigger_mode=trigger_mode, assigned_scan_id=scan_id)
+        api_client = DeployGuardAPIClient(self.config)
+        api_client.bind_scan(scan_id, "k8s")
+        self.scan_id = scan_id
+        return self._execute_scan(api_client=api_client, scan_id=scan_id, trigger_mode=trigger_mode)
 
-    def _run_scan(self, trigger_mode: str, assigned_scan_id: Optional[str] = None) -> Dict[str, Any]:
+    def _run_scan(self, trigger_mode: str) -> Dict[str, Any]:
         """실제 스캔 실행"""
         print(f"\n{'='*60}")
         print(f"DeployGuard K8s Scanner v3.0.0")
@@ -161,112 +164,46 @@ class K8sScanner:
         print(f"Mode: {trigger_mode}")
         print(f"{'='*60}\n")
 
-        # 1. API 클라이언트 초기화
         api_client = DeployGuardAPIClient(self.config)
         orchestrator = ScanOrchestrator(self.config, api_client)
-
-        # 2. 스캔 시작 등록
-        scan_id = orchestrator.bind_or_start_scan(
+        scan_id = orchestrator.start_scan(
             scanner_type="k8s",
             trigger_mode=trigger_mode,
-            assigned_scan_id=assigned_scan_id,
         )
         self.scan_id = scan_id
+        return self._execute_scan(api_client=api_client, scan_id=scan_id, trigger_mode=trigger_mode)
 
-        # 3. K8s 리소스 수집
-        try:
-            resources = self._collect_all_resources()
-        except KeyboardInterrupt as exc:
-            orchestrator.handle_failure(
-                exc,
-                phase="execution",
-                detail={
-                    "scanner_type": "k8s",
-                    "trigger_mode": trigger_mode,
-                },
-            )
-            raise
-        except Exception as exc:
-            orchestrator.handle_failure(
-                exc,
-                phase="execution",
-                detail={
-                    "scanner_type": "k8s",
-                    "trigger_mode": trigger_mode,
-                },
-            )
-            raise
+    def _execute_scan(
+        self,
+        api_client: DeployGuardAPIClient,
+        scan_id: str,
+        trigger_mode: str,
+    ) -> Dict[str, Any]:
+        orchestrator = ScanOrchestrator(self.config, api_client)
+        resources = self._collect_all_resources()
 
-        # 4. 페이로드 생성 (Fact Extractor 호환 구조)
         payload = self._build_payload(
             scan_id=scan_id,
             trigger_mode=trigger_mode,
             resources=resources,
         )
 
-        # 5. 로컬 저장 (옵션)
         local_file = None
         if self.config.save_local_copy:
             local_file = self._save_local_copy(payload, scan_id)
 
-        # 6. S3 업로드
-        try:
-            uploaded_files = [orchestrator.upload_result(payload, self.config.upload_file_name)]
-        except KeyboardInterrupt as exc:
-            orchestrator.handle_failure(
-                exc,
-                phase="upload",
-                detail={
-                    "scanner_type": "k8s",
-                    "trigger_mode": trigger_mode,
-                },
-            )
-            raise
-        except Exception as exc:
-            orchestrator.handle_failure(
-                exc,
-                phase="upload",
-                detail={
-                    "scanner_type": "k8s",
-                    "trigger_mode": trigger_mode,
-                },
-            )
-            raise
+        uploaded_files = [orchestrator.upload_result(payload, self.config.upload_file_name)]
 
-        # 7. 스캔 완료 알림
         summary = payload.get("summary", {})
-        try:
-            complete_result = orchestrator.complete_scan(
-                meta={
-                    "scanner_type": "k8s",
-                    "trigger_mode": trigger_mode,
-                    "cluster_type": self.cluster_type,
-                    "resource_counts": summary.get("by_type", {}),
-                    "security_indicators": summary.get("security_indicators", {}),
-                }
-            )
-        except KeyboardInterrupt as exc:
-            orchestrator.handle_failure(
-                exc,
-                phase="complete",
-                detail={
-                    "scanner_type": "k8s",
-                    "trigger_mode": trigger_mode,
-                    "uploaded_files": uploaded_files,
-                },
-            )
-            raise
-        except Exception as exc:
-            orchestrator.handle_failure(
-                exc,
-                phase="complete",
-                detail={
-                    "scanner_type": "k8s",
-                    "trigger_mode": trigger_mode,
-                    "uploaded_files": uploaded_files,
-                },
-            )
-            raise
+        complete_result = orchestrator.complete_scan(
+            meta={
+                "scanner_type": "k8s",
+                "trigger_mode": trigger_mode,
+                "cluster_type": self.cluster_type,
+                "resource_counts": summary.get("by_type", {}),
+                "security_indicators": summary.get("security_indicators", {}),
+            }
+        )
 
         return orchestrator.build_result(
             scan_id=scan_id,

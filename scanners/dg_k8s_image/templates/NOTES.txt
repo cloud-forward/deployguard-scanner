@@ -10,37 +10,27 @@ API URL: {{ include "deployguard-scanner.apiUrl" . }}
 설치된 컴포넌트:
 -------------------------------------------------------
 {{- if .Values.k8sScanner.enabled }}
-✅ K8s Scanner CronJob
-   스케줄: {{ .Values.k8sScanner.schedule }}
-   다음 실행: kubectl get cronjob -n {{ include "deployguard-scanner.namespace" . }}
+✅ K8s Scanner Deployment
+   replicas: {{ .Values.k8sScanner.replicas }}
+   상태 확인: kubectl get deployment {{ include "deployguard-scanner.fullname" . }}-k8s -n {{ include "deployguard-scanner.namespace" . }}
+   실행 모드: worker
 {{- end }}
 
 {{- if .Values.imageScanner.enabled }}
-✅ Image Scanner CronJob  
-   스케줄: {{ .Values.imageScanner.schedule }}
-   다음 실행: kubectl get cronjob -n {{ include "deployguard-scanner.namespace" . }}
+✅ Image Scanner Deployment
+   replicas: {{ .Values.imageScanner.replicas }}
+   상태 확인: kubectl get deployment {{ include "deployguard-scanner.fullname" . }}-image -n {{ include "deployguard-scanner.namespace" . }}
+   실행 모드: worker
 {{- end }}
 
 -------------------------------------------------------
 스캔 상태 확인:
 -------------------------------------------------------
-# CronJob 상태
-kubectl get cronjob -n {{ include "deployguard-scanner.namespace" . }}
-
-# 최근 Job 확인
-kubectl get jobs -n {{ include "deployguard-scanner.namespace" . }} --sort-by=.metadata.creationTimestamp
+# Deployment 상태
+kubectl get deployment -n {{ include "deployguard-scanner.namespace" . }}
 
 # Pod 로그 확인
 kubectl logs -n {{ include "deployguard-scanner.namespace" . }} -l app.kubernetes.io/name={{ include "deployguard-scanner.name" . }} --tail=100
-
--------------------------------------------------------
-수동 스캔 실행:
--------------------------------------------------------
-# K8s 스캔
-kubectl create job --from=cronjob/{{ include "deployguard-scanner.fullname" . }}-k8s manual-k8s-$(date +%s) -n {{ include "deployguard-scanner.namespace" . }}
-
-# Image 스캔
-kubectl create job --from=cronjob/{{ include "deployguard-scanner.fullname" . }}-image manual-image-$(date +%s) -n {{ include "deployguard-scanner.namespace" . }}
 
 -------------------------------------------------------
 문제 해결:

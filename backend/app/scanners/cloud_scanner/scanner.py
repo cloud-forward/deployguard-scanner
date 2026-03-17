@@ -48,16 +48,18 @@ class CloudScanner:
         return self._run_scan(trigger_mode="scheduled")
 
     def run_worker_scan(self, scan_id: str, trigger_mode: str = "scheduled") -> Dict[str, Any]:
-        return self._run_scan(trigger_mode=trigger_mode, assigned_scan_id=scan_id)
-
-    def _run_scan(self, trigger_mode: str, assigned_scan_id: Optional[str] = None) -> Dict[str, Any]:
-        orchestrator = ScanOrchestrator(self.config, self.api_client)
-        scan_id = orchestrator.bind_or_start_scan(
+        self.api_client.bind_scan(scan_id, self.config.scanner_type)
+        ScanOrchestrator(self.config, self.api_client).start_scan(
             scanner_type=self.config.scanner_type,
             trigger_mode=trigger_mode,
-            assigned_scan_id=assigned_scan_id,
         )
+        return self._execute_scan(scan_id=scan_id, trigger_mode=trigger_mode)
 
+    def _run_scan(self, trigger_mode: str) -> Dict[str, Any]:
+        raise RuntimeError("AWS scanner only supports worker execution via the pending queue contract")
+
+    def _execute_scan(self, scan_id: str, trigger_mode: str) -> Dict[str, Any]:
+        orchestrator = ScanOrchestrator(self.config, self.api_client)
         try:
             aws_account_id = self._resolve_account_id()
             payload = self._collect_all_resources(
@@ -70,64 +72,20 @@ class CloudScanner:
             if self.config.save_local_copy:
                 local_output_file = self.save_json(payload)
 
-            try:
-                uploaded_files = [orchestrator.upload_result(payload, self.config.upload_file_name)]
-            except KeyboardInterrupt as exc:
-                orchestrator.handle_failure(
-                    exc,
-                    phase="upload",
-                    detail={
-                        "scanner_type": self.config.scanner_type,
-                        "trigger_mode": trigger_mode,
-                    },
-                )
-                raise
-            except Exception as exc:
-                orchestrator.handle_failure(
-                    exc,
-                    phase="upload",
-                    detail={
-                        "scanner_type": self.config.scanner_type,
-                        "trigger_mode": trigger_mode,
-                    },
-                )
-                raise
+            uploaded_files = [orchestrator.upload_result(payload, self.config.upload_file_name)]
 
             resource_counts = payload.get("resource_counts", {})
 
-            try:
-                complete_resp = orchestrator.complete_scan(
-                    resource_counts=resource_counts,
-                    meta={
-                        "scanner_type": self.config.scanner_type,
-                        "trigger_mode": trigger_mode,
-                        "scan_type": self.config.scan_type,
-                        "uploaded_file_name": self.config.upload_file_name,
-                        "recommended_cron_schedule": self.config.aws_recommended_cron_schedule,
-                    },
-                )
-            except KeyboardInterrupt as exc:
-                orchestrator.handle_failure(
-                    exc,
-                    phase="complete",
-                    detail={
-                        "scanner_type": self.config.scanner_type,
-                        "trigger_mode": trigger_mode,
-                        "uploaded_files": uploaded_files,
-                    },
-                )
-                raise
-            except Exception as exc:
-                orchestrator.handle_failure(
-                    exc,
-                    phase="complete",
-                    detail={
-                        "scanner_type": self.config.scanner_type,
-                        "trigger_mode": trigger_mode,
-                        "uploaded_files": uploaded_files,
-                    },
-                )
-                raise
+            complete_resp = orchestrator.complete_scan(
+                resource_counts=resource_counts,
+                meta={
+                    "scanner_type": self.config.scanner_type,
+                    "trigger_mode": trigger_mode,
+                    "scan_type": self.config.scan_type,
+                    "uploaded_file_name": self.config.upload_file_name,
+                    "recommended_cron_schedule": self.config.aws_recommended_cron_schedule,
+                },
+            )
 
             return orchestrator.build_result(
                 scan_id=scan_id,
@@ -139,25 +97,11 @@ class CloudScanner:
                     "resource_counts": resource_counts,
                 },
             )
-        except KeyboardInterrupt as exc:
-            orchestrator.handle_failure(
-                exc,
-                phase="execution",
-                detail={
-                    "scanner_type": self.config.scanner_type,
-                    "trigger_mode": trigger_mode,
-                },
-            )
+        except KeyboardInterrupt:
+            logger.warning("AWS scan interrupted", extra={"scan_id": scan_id, "trigger_mode": trigger_mode})
             raise
-        except Exception as exc:
-            orchestrator.handle_failure(
-                exc,
-                phase="execution",
-                detail={
-                    "scanner_type": self.config.scanner_type,
-                    "trigger_mode": trigger_mode,
-                },
-            )
+        except Exception:
+            logger.exception("AWS scan failed", extra={"scan_id": scan_id, "trigger_mode": trigger_mode})
             raise
 
     def _collect_all_resources(

@@ -64,9 +64,7 @@ def main() -> int:
 
         scanner = CloudScanner(config)
         if mode == "manual":
-            result = scanner.run_manual_scan()
-            print(json.dumps(_format_result(result, config, mode), ensure_ascii=False, indent=2))
-            return 0
+            raise RuntimeError("manual mode is not supported for the AWS worker; use scheduled queue processing")
         else:
             _run_scheduled_loop(scanner, config, mode)
             return 0

@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-import logging
 from typing import Any, Dict, Optional
 
 from .config import ScannerConfig
 from shared.api_client import EngineApiClient
 from shared.uploader import JsonResultUploader
-
-logger = logging.getLogger(__name__)
-
 
 class DeployGuardApiClient:
     def __init__(self, config: ScannerConfig) -> None:
@@ -20,21 +16,26 @@ class DeployGuardApiClient:
         self.uploaded_files: list[str] = []
 
     def start_scan(self, scanner_type: str, request_source: str) -> str:
+        if not self.scan_id:
+            raise ValueError("scan_id is None. Call poll_scan() first.")
+
         data = self.engine_client.start_scan(
+            scan_id=self.scan_id,
             json_body={
                 "cluster_id": self.config.cluster_id,
                 "scanner_type": scanner_type,
                 "request_source": request_source,
             },
         )
-        scan_id = data.get("scan_id")
-        if not scan_id:
-            raise RuntimeError(f"scan_id not found in /api/scans/start response: {data}")
-
-        self.scan_id = str(scan_id)
         self.scanner_type = scanner_type
+        started_scan_id = data.get("scan_id", self.scan_id)
+        if str(started_scan_id) != str(self.scan_id):
+            raise RuntimeError(
+                f"scan_id mismatch in /api/v1/scans/{{scan_id}}/start response: expected {self.scan_id}, got {data}"
+            )
+
         self.uploaded_files = []
-        return str(scan_id)
+        return str(self.scan_id)
 
     def bind_scan(self, scan_id: str, scanner_type: str) -> None:
         self.scan_id = scan_id
@@ -44,7 +45,7 @@ class DeployGuardApiClient:
     def poll_scan(self) -> Optional[Dict[str, Any]]:
         data = self.engine_client.poll_scan(
             path=self.config.scan_poll_path,
-            json_body={
+            query_params={
                 "scanner_type": self.config.scanner_type,
                 "scan_type": self.config.scan_type,
             },
@@ -138,25 +139,3 @@ class DeployGuardApiClient:
             scan_id=resolved_scan_id,
             json_body=json_body,
         )
-
-    def report_error(
-        self,
-        scan_id: Optional[str] = None,
-        message: str = "",
-        detail: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        resolved_scan_id = scan_id or self.scan_id
-        if not resolved_scan_id:
-            return
-
-        payload: Dict[str, Any] = {"message": message}
-        if detail:
-            payload["detail"] = detail
-
-        try:
-            self.engine_client.report_error(
-                scan_id=resolved_scan_id,
-                json_body=payload,
-            )
-        except Exception:
-            logger.exception("Failed to report scan error to engine")

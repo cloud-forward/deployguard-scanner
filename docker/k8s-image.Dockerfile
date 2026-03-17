@@ -29,4 +29,4 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONPATH=/app
 
 ENTRYPOINT ["python", "-m", "scanners.dg_k8s_image.scan"]
-CMD ["scheduled"]
+CMD ["worker"]

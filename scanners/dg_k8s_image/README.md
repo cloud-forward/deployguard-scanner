@@ -2,6 +2,17 @@
 
 Kubernetes 클러스터 보안 스캐너
 
+## Helm 배포 필수 값
+
+- `clusterId`는 Helm 배포 시 반드시 전달해야 합니다. 차트 기본값은 비워 두는 것이 정상입니다.
+- API 토큰은 Secret으로 제공해야 합니다. `api.existingSecret` 사용이 권장됩니다.
+
+```bash
+helm upgrade --install deployguard-scanner ./scanners/dg_k8s_image \
+  --set clusterId=<registered-cluster-id> \
+  --set api.existingSecret=<api-token-secret>
+```
+
 ## 기능
 
 - **K8s 리소스 수집**: Pod, Deployment, Service, Ingress, RBAC, NetworkPolicy 등

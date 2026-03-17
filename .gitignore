@@ -25,3 +25,5 @@ output/
 # Helm
 *.tgz
 charts/
+
+.ai/

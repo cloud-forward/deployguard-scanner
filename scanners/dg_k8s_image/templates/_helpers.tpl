@@ -81,10 +81,14 @@ API endpoint
 {{- end }}
 
 {{/*
-API token
+API token Secret name
 */}}
-{{- define "deployguard-scanner.apiToken" -}}
-{{- default "" .Values.api.token }}
+{{- define "deployguard-scanner.apiTokenSecretName" -}}
+{{- if .Values.api.existingSecret }}
+{{- .Values.api.existingSecret }}
+{{- else }}
+{{- printf "%s-api-token" (include "deployguard-scanner.fullname" .) }}
+{{- end }}
 {{- end }}
 
 {{/*

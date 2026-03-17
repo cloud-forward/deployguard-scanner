@@ -13,10 +13,11 @@ from tests.conftest import Response
 def test_engine_api_client_poll_scan_returns_none_on_204(monkeypatch: pytest.MonkeyPatch) -> None:
     captured = {}
 
-    def fake_request(method, url, json, headers, timeout):
+    def fake_request(method, url, json, params, headers, timeout):
         captured["method"] = method
         captured["url"] = url
         captured["json"] = json
+        captured["params"] = params
         captured["headers"] = headers
         captured["timeout"] = timeout
         return Response(204)
@@ -33,19 +34,20 @@ def test_engine_api_client_poll_scan_returns_none_on_204(monkeypatch: pytest.Mon
         )
     )
 
-    result = client.poll_scan("/api/scans/poll", {"scanner_type": "aws"})
+    result = client.poll_scan("/api/v1/scans/pending", {"scanner_type": "aws"})
 
     assert result is None
-    assert captured["method"] == "POST"
-    assert captured["url"] == "https://api.example.com/api/scans/poll"
-    assert captured["json"] == {"scanner_type": "aws"}
+    assert captured["method"] == "GET"
+    assert captured["url"] == "https://api.example.com/api/v1/scans/pending"
+    assert captured["json"] is None
+    assert captured["params"] == {"scanner_type": "aws"}
     assert captured["headers"]["Authorization"] == "Bearer token-1"
 
 
 def test_engine_api_client_retries_transient_error(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = {"count": 0}
 
-    def fake_request(method, url, json, headers, timeout):
+    def fake_request(method, url, json, params, headers, timeout):
         calls["count"] += 1
         if calls["count"] == 1:
             return Response(503, text="busy")
@@ -63,7 +65,7 @@ def test_engine_api_client_retries_transient_error(monkeypatch: pytest.MonkeyPat
         )
     )
 
-    result = client.start_scan({"scanner_type": "aws"})
+    result = client.start_scan({"scanner_type": "aws"}, scan_id="scan-123")
 
     assert result == {"scan_id": "scan-123"}
     assert calls["count"] == 2
@@ -119,3 +121,7 @@ def test_json_result_uploader_raises_after_retries(monkeypatch: pytest.MonkeyPat
 
     with pytest.raises(RuntimeError, match="Upload failed after retries"):
         uploader._upload_to_s3("https://upload.example.com", b"{}")
+
+
+def test_engine_api_client_removes_legacy_error_endpoint() -> None:
+    assert not hasattr(EngineApiClient, "report_error")
