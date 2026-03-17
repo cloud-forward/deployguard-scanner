@@ -22,9 +22,9 @@ jobs:
       matrix:
         target:
           - name: aws
-            dockerfile: docker/aws-scanner.Dockerfile
+            dockerfile: docker/aws-cloud-scanner.Dockerfile
           - name: k8s-image
-            dockerfile: docker/k8s-image.Dockerfile
+            dockerfile: docker/dg-k8s-image.Dockerfile
 
     steps:
       - name: Checkout
