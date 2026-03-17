@@ -12,7 +12,7 @@ permissions:
 env:
   AWS_REGION: ${{ vars.AWS_REGION }}
   AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
-  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+  ECR_REPOSITORY: deployguard-scanner
 
 jobs:
   build-and-push:
@@ -22,16 +22,16 @@ jobs:
       matrix:
         target:
           - name: aws
-            dockerfile: backend/app/scanners/cloud_scanner/Dockerfile
+            dockerfile: docker/aws-scanner.Dockerfile
           - name: k8s-image
-            dockerfile: docker/dg-k8s-image.Dockerfile
+            dockerfile: docker/k8s-image.Dockerfile
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
