@@ -36,11 +36,11 @@ jobs:
           TAG_NAME="${GITHUB_REF_NAME}"
 
           if [[ "$TAG_NAME" == agent-v* ]]; then
-            echo "DOCKERFILE=docker/k8s-image.Dockerfile" >> $GITHUB_ENV
+            echo "DOCKERFILE=docker/dg-k8s-image.Dockerfile" >> $GITHUB_ENV
             echo "ECR_REPOSITORY=deployguard-agent-scanner" >> $GITHUB_ENV
             echo "IMAGE_TAG=${TAG_NAME#agent-v}" >> $GITHUB_ENV
           elif [[ "$TAG_NAME" == aws-v* ]]; then
-            echo "DOCKERFILE=docker/aws-scanner.Dockerfile" >> $GITHUB_ENV
+            echo "DOCKERFILE=docker/aws-cloud-scanner.Dockerfile" >> $GITHUB_ENV
             echo "ECR_REPOSITORY=deployguard-aws-scanner" >> $GITHUB_ENV
             echo "IMAGE_TAG=${TAG_NAME#aws-v}" >> $GITHUB_ENV
           else
