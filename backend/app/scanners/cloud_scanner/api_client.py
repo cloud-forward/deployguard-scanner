@@ -6,6 +6,7 @@ from .config import ScannerConfig
 from shared.api_client import EngineApiClient
 from shared.uploader import JsonResultUploader
 
+
 class DeployGuardApiClient:
     def __init__(self, config: ScannerConfig) -> None:
         self.config = config
@@ -15,25 +16,11 @@ class DeployGuardApiClient:
         self.scanner_type: Optional[str] = None
         self.uploaded_files: list[str] = []
 
-    def start_scan(self, scanner_type: str, request_source: str) -> str:
+    def start_scan(self, scanner_type: str, request_source: str = "scheduled") -> str:
+        """poll_scan으로 이미 claim된 scan_id가 있으므로 상태만 세팅."""
         if not self.scan_id:
             raise ValueError("scan_id is None. Call poll_scan() first.")
-
-        data = self.engine_client.start_scan(
-            scan_id=self.scan_id,
-            json_body={
-                "cluster_id": self.config.cluster_id,
-                "scanner_type": scanner_type,
-                "request_source": request_source,
-            },
-        )
         self.scanner_type = scanner_type
-        started_scan_id = data.get("scan_id", self.scan_id)
-        if str(started_scan_id) != str(self.scan_id):
-            raise RuntimeError(
-                f"scan_id mismatch in /api/v1/scans/{{scan_id}}/start response: expected {self.scan_id}, got {data}"
-            )
-
         self.uploaded_files = []
         return str(self.scan_id)
 
@@ -47,7 +34,6 @@ class DeployGuardApiClient:
             path=self.config.scan_poll_path,
             query_params={
                 "scanner_type": self.config.scanner_type,
-                "scan_type": self.config.scan_type,
             },
         )
         if not data:
@@ -70,30 +56,28 @@ class DeployGuardApiClient:
         resolved_scan_id = scan_id or self.scan_id
         resolved_scanner_type = scanner_type or self.scanner_type
         if not resolved_scan_id:
-            raise ValueError("scan_id is None. Call start_scan() first.")
+            raise ValueError("scan_id is None. Call poll_scan() first.")
         if not resolved_scanner_type:
-            raise ValueError("scanner_type is None. Call start_scan() first.")
+            raise ValueError("scanner_type is None. Call poll_scan() first.")
 
         data = self.engine_client.get_upload_url(
             scan_id=resolved_scan_id,
             json_body={
-                "scanner_type": resolved_scanner_type,
-                "filename": filename,
                 "file_name": filename,
+                "scanner_type": resolved_scanner_type,
             },
         )
 
-        upload_url = data.get("presigned_url") or data.get("upload_url")
-        file_key = data.get("s3_key") or data.get("key") or data.get("file_key")
+        upload_url = data.get("upload_url") or data.get("presigned_url")
+        s3_key = data.get("s3_key") or data.get("key") or data.get("file_key")
         if not upload_url:
-            raise RuntimeError(f"presigned_url/upload_url not found in upload-url response: {data}")
-        if not file_key:
-            file_key = f"scans/{self.config.cluster_id}/{resolved_scan_id}/{resolved_scanner_type}/{filename}"
+            raise RuntimeError(f"upload_url not found in upload-url response: {data}")
+        if not s3_key:
+            s3_key = f"scans/{self.config.cluster_id}/{resolved_scan_id}/{resolved_scanner_type}/{filename}"
 
         return {
-            **data,
             "upload_url": upload_url,
-            "file_key": file_key,
+            "s3_key": s3_key,
         }
 
     def upload_to_s3(self, upload_url: str, content: bytes) -> None:
@@ -101,9 +85,9 @@ class DeployGuardApiClient:
 
     def upload_scan_result(self, payload: Dict[str, Any], filename: str = "aws-snapshot.json") -> str:
         if not self.scan_id:
-            raise ValueError("scan_id is None. Call start_scan() first.")
+            raise ValueError("scan_id is None. Call poll_scan() first.")
         if not self.scanner_type:
-            raise ValueError("scanner_type is None. Call start_scan() first.")
+            raise ValueError("scanner_type is None. Call poll_scan() first.")
 
         upload_info = self.uploader.upload_scan_result(
             scan_id=self.scan_id,
@@ -111,9 +95,9 @@ class DeployGuardApiClient:
             payload=payload,
             filename=filename,
         )
-        file_key = upload_info["file_key"]
-        self.uploaded_files.append(file_key)
-        return file_key
+        s3_key = upload_info.get("s3_key") or upload_info.get("file_key")
+        self.uploaded_files.append(s3_key)
+        return s3_key
 
     def complete_scan(
         self,
@@ -125,7 +109,7 @@ class DeployGuardApiClient:
         resolved_scan_id = scan_id or self.scan_id
         resolved_files = files or self.uploaded_files
         if not resolved_scan_id:
-            raise ValueError("scan_id is None. Call start_scan() first.")
+            raise ValueError("scan_id is None. Call poll_scan() first.")
         if not resolved_files:
             raise ValueError("No files uploaded. Call upload_scan_result() first.")
 

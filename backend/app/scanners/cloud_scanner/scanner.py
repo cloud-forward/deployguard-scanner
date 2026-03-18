@@ -38,25 +38,10 @@ class CloudScanner:
         self.sts = self.session.client("sts", region_name=config.region)
         self.api_client = DeployGuardApiClient(config)
 
-    def run(self) -> Dict[str, Any]:
-        return self.run_scheduled_scan()
-
-    def run_manual_scan(self) -> Dict[str, Any]:
-        return self._run_scan(trigger_mode="manual")
-
-    def run_scheduled_scan(self) -> Dict[str, Any]:
-        return self._run_scan(trigger_mode="scheduled")
-
     def run_worker_scan(self, scan_id: str, trigger_mode: str = "scheduled") -> Dict[str, Any]:
+        # poll_scan에서 이미 claim됐으므로 bind만 하고 바로 실행
         self.api_client.bind_scan(scan_id, self.config.scanner_type)
-        ScanOrchestrator(self.config, self.api_client).start_scan(
-            scanner_type=self.config.scanner_type,
-            trigger_mode=trigger_mode,
-        )
         return self._execute_scan(scan_id=scan_id, trigger_mode=trigger_mode)
-
-    def _run_scan(self, trigger_mode: str) -> Dict[str, Any]:
-        raise RuntimeError("AWS scanner only supports worker execution via the pending queue contract")
 
     def _execute_scan(self, scan_id: str, trigger_mode: str) -> Dict[str, Any]:
         orchestrator = ScanOrchestrator(self.config, self.api_client)
@@ -93,15 +78,13 @@ class CloudScanner:
                 complete_result=complete_resp,
                 uploaded_files=uploaded_files,
                 local_file=local_output_file,
-                extra={
-                    "resource_counts": resource_counts,
-                },
+                extra={"resource_counts": resource_counts},
             )
         except KeyboardInterrupt:
-            logger.warning("AWS scan interrupted", extra={"scan_id": scan_id, "trigger_mode": trigger_mode})
+            logger.warning("AWS scan interrupted", extra={"scan_id": scan_id})
             raise
         except Exception:
-            logger.exception("AWS scan failed", extra={"scan_id": scan_id, "trigger_mode": trigger_mode})
+            logger.exception("AWS scan failed", extra={"scan_id": scan_id})
             raise
 
     def _collect_all_resources(
