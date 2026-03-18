@@ -68,7 +68,7 @@ class DeployGuardAPIClient:
     def poll_scan(self) -> Optional[Dict[str, Any]]:
         data = self.engine_client.poll_scan(
             path=self.config.scan_poll_path,
-            json_body={
+            query_params={
                 "scanner_type": self.config.scanner_type,
             },
         )
