@@ -3,7 +3,7 @@ name: scanner-ci-ecr
 on:
   push:
     branches:
-      - '**'
+      - develop
 
 permissions:
   id-token: write
