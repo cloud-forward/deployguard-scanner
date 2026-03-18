@@ -1,20 +1,18 @@
 FROM python:3.11-slim
 
 # Trivy 설치
-ARG TRIVY_VERSION=0.50.0
-
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
+    wget \
+    apt-transport-https \
+    gnupg \
     ca-certificates \
-    tar \
-    gzip \
-    && curl -fsSL -o /tmp/trivy.tar.gz \
-      https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz \
-    && tar -xzf /tmp/trivy.tar.gz -C /tmp \
-    && mv /tmp/trivy /usr/local/bin/trivy \
-    && chmod +x /usr/local/bin/trivy \
+    && wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key \
+      | gpg --dearmor -o /usr/share/keyrings/trivy.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" \
+      > /etc/apt/sources.list.d/trivy.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends trivy \
     && trivy --version \
-    && rm -f /tmp/trivy.tar.gz \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
