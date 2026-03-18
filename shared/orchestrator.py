@@ -24,8 +24,35 @@ class ScanOrchestrator:
         return self.api_client.start_scan(
             scanner_type=scanner_type,
             request_source=request_source,
-            **kwargs,
         )
+
+    def bind_or_start_scan(
+        self,
+        scanner_type: str,
+        trigger_mode: str = "scheduled",
+        assigned_scan_id: Optional[str] = None,
+        **kwargs: Any,
+    ) -> str:
+        if assigned_scan_id:
+            self.api_client.bind_scan(assigned_scan_id, scanner_type)
+            return assigned_scan_id
+
+        # start → queued 상태로 생성
+        try:
+            self.start_scan(
+                scanner_type=scanner_type,
+                trigger_mode=trigger_mode,
+            )
+        except RuntimeError as exc:
+            if "409" not in str(exc):
+                raise
+
+        # pending claim → running 상태로 전이
+        pending = self.api_client.poll_scan()
+        if not pending:
+            raise RuntimeError("Failed to claim pending scan after start")
+
+        return str(pending["scan_id"])
 
     def upload_result(self, payload: Dict[str, Any], filename: str) -> str:
         return self.api_client.upload_scan_result(payload, filename)
@@ -40,12 +67,48 @@ class ScanOrchestrator:
             resource_counts=resource_counts,
         )
 
+    def report_error(
+        self,
+        message: str,
+        detail: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        report_error = getattr(self.api_client, "report_error", None)
+        if report_error is None:
+            return
+        report_error(message=message, detail=detail)
+
+    def handle_failure(
+        self,
+        exc: BaseException,
+        phase: str,
+        detail: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if getattr(exc, "_deployguard_reported", False):
+            return
+
+        failure_detail = {
+            "phase": phase,
+            "error_type": type(exc).__name__,
+        }
+        if detail:
+            failure_detail.update(detail)
+        if not isinstance(exc, KeyboardInterrupt):
+            failure_detail["error"] = str(exc)
+
+        message = "Scan interrupted" if isinstance(exc, KeyboardInterrupt) else f"Scan failed during {phase}: {exc}"
+        self.report_error(message=message, detail=failure_detail)
+
+        try:
+            setattr(exc, "_deployguard_reported", True)
+        except Exception:
+            pass
+
     def build_result(
         self,
         scan_id: str,
         payload: Dict[str, Any],
         complete_result: Dict[str, Any],
-        uploaded_files: list[str],
+        uploaded_files: list,
         local_file: Optional[str] = None,
         extra: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
@@ -66,19 +129,8 @@ class ScanOrchestrator:
 def run_polling_loop(
     poll_once: Callable[[], bool],
     interval_seconds: int = DEFAULT_POLL_INTERVAL_SECONDS,
-    should_stop: Optional[Callable[[], bool]] = None,
 ) -> None:
     while True:
-        if should_stop and should_stop():
-            return
         handled = poll_once()
-        if should_stop and should_stop():
-            return
         if not handled:
-            remaining_sleep = interval_seconds
-            while remaining_sleep > 0:
-                if should_stop and should_stop():
-                    return
-                sleep_seconds = min(1, remaining_sleep)
-                time.sleep(sleep_seconds)
-                remaining_sleep -= sleep_seconds
+            time.sleep(interval_seconds)
