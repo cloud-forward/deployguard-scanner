@@ -63,7 +63,7 @@ Create the name of the service account to use
 Cluster ID - Helm values에서 가져옴 (필수)
 */}}
 {{- define "deployguard-scanner.clusterId" -}}
-{{- required "clusterId is required" .Values.clusterId }}
+{{- required "config.clusterId is required" (default .Values.clusterId .Values.config.clusterId) }}
 {{- end }}
 
 {{/*
@@ -77,7 +77,14 @@ Cluster Name - 없으면 clusterId 사용
 API endpoint
 */}}
 {{- define "deployguard-scanner.apiUrl" -}}
-{{- default "https://analysis.deployguard.org" (default .Values.api.url .Values.api.endpoint) }}
+{{- default "https://analysis.deployguard.org" (default (default .Values.api.url .Values.api.endpoint) .Values.config.serverUrl) }}
+{{- end }}
+
+{{/*
+API token
+*/}}
+{{- define "deployguard-scanner.apiToken" -}}
+{{- default .Values.api.token .Values.config.apiToken }}
 {{- end }}
 
 {{/*

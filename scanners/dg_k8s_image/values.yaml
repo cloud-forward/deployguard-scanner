@@ -1,3 +1,9 @@
+# Helm-first configuration inputs
+config:
+  clusterId: ""
+  apiToken: ""
+  serverUrl: "https://analysis.deployguard.org"
+
 # ============================================================
 # DeployGuard Scanner Configuration
 # ============================================================
@@ -6,8 +12,9 @@
 # clusterId는 기본값 없이 배포 시점에 반드시 전달해야 합니다.
 # 예시:
 # helm upgrade --install deployguard-scanner ./scanners/dg_k8s_image \
-#   --set clusterId=<registered-cluster-id> \
-#   --set api.existingSecret=<api-token-secret>
+#   --set config.clusterId=<registered-cluster-id> \
+#   --set config.apiToken=<api-token> \
+#   --set config.serverUrl=https://analysis.deployguard.org
 clusterId: ""
 clusterName: ""         # 클러스터 표시 이름 (없으면 clusterId 사용)
 
