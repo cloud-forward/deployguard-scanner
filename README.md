@@ -18,8 +18,9 @@ Collection)** 에만 집중합니다.
 각 모듈은 독립적인 역할과 책임(Separation of Concerns)을 가지며 동일한
 데이터 계약을 기반으로 Analysis Engine과 통신합니다.
 
-각 모듈은 **독립적으로 실행되는 서비스가 아니라 Helm Chart 형태로
-패키징되어 Kubernetes 클러스터에 설치**됩니다.
+에이전트 스캐너(`dg-k8s`, `dg-image`)는 **Helm Chart 형태로 Kubernetes
+클러스터에 설치**되며, AWS 스캐너(`dg-aws`)는 **engine 측
+docker-compose**로 실행됩니다.
 
 ------------------------------------------------------------------------
 
@@ -114,18 +115,21 @@ Python을 사용하는 이유:
 
 # 빌드 및 배포 (Build & Deployment)
 
-각 스캐너 모듈은 **Helm Chart 형태로 패키징되어 Kubernetes 클러스터에
-설치**됩니다.
+에이전트 스캐너(`dg-k8s`, `dg-image`)는 **Helm Chart 형태로 Kubernetes
+클러스터에 설치**됩니다. AWS 스캐너(`dg-aws`)는 Helm이 아니라
+**docker-compose**로 배포됩니다.
 
 배포 방식:
 
--   Helm을 통해 클러스터에 설치
--   필요한 모듈만 선택적으로 활성화
--   클러스터 내부에서 Analysis Engine API로 데이터 전송
+-   k8s + image 에이전트 스캐너: Helm을 통해 클러스터에 설치
+-   aws 스캐너: engine 인프라에서 docker-compose로 실행
+-   클러스터 내부 또는 engine 측에서 Analysis Engine API로 데이터 전송
 
 예시:
 
-    helm install deployguard-scanner ./helm
+    helm upgrade --install deployguard-scanner ./scanners/dg_k8s_image \
+      --set clusterId=<registered-cluster-id> \
+      --set api.existingSecret=<api-token-secret>
 
 ------------------------------------------------------------------------
 
