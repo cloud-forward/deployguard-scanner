@@ -24,6 +24,6 @@ output/
 
 # Helm
 *.tgz
-charts/
 
+#ai
 .ai/
