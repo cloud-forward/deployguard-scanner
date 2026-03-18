@@ -129,8 +129,13 @@ class ScanOrchestrator:
 def run_polling_loop(
     poll_once: Callable[[], bool],
     interval_seconds: int = DEFAULT_POLL_INTERVAL_SECONDS,
+    should_stop: Optional[Callable[[], bool]] = None,
 ) -> None:
     while True:
+        if should_stop and should_stop():
+            return
         handled = poll_once()
+        if should_stop and should_stop():
+            return
         if not handled:
             time.sleep(interval_seconds)
