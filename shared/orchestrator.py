@@ -37,7 +37,6 @@ class ScanOrchestrator:
             self.api_client.bind_scan(assigned_scan_id, scanner_type)
             return assigned_scan_id
 
-        # start → queued 상태로 생성
         try:
             self.start_scan(
                 scanner_type=scanner_type,
@@ -47,7 +46,6 @@ class ScanOrchestrator:
             if "409" not in str(exc):
                 raise
 
-        # pending claim → running 상태로 전이
         pending = self.api_client.poll_scan()
         if not pending:
             raise RuntimeError("Failed to claim pending scan after start")
@@ -62,10 +60,18 @@ class ScanOrchestrator:
         meta: Optional[Dict[str, Any]] = None,
         resource_counts: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        return self.api_client.complete_scan(
+        result = self.api_client.complete_scan(
             meta=meta,
             resource_counts=resource_counts,
         )
+        # 스캔 완료 후 analysis/jobs 트리거 시도
+        try:
+            trigger = getattr(self.api_client, "trigger_analysis_if_ready", None)
+            if trigger is not None:
+                trigger()
+        except Exception as exc:
+            print(f"[-] trigger_analysis_if_ready failed (non-fatal): {exc}")
+        return result
 
     def report_error(
         self,
