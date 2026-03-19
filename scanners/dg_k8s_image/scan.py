@@ -33,7 +33,7 @@ def _log_worker_event(action: str, **fields: object) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='DeployGuard Scanner v3.0.0')
+    parser = argparse.ArgumentParser(description='DeployGuard Scanner v3.1.0')
     parser.add_argument(
         'mode',
         nargs='?',
@@ -66,7 +66,7 @@ def main() -> int:
         config = load_config(ScannerConfig)
 
         print(f"\n{'='*60}")
-        print(f"DeployGuard Scanner v3.0.0")
+        print(f"DeployGuard Scanner v3.1.0")
         print(f"{'='*60}")
         print(f"Cluster ID: {config.cluster_id}")
         print(f"API URL: {config.api_url}")
@@ -317,7 +317,7 @@ def _print_image_summary(result: dict) -> None:
                 print(f"  {sev}: {count}")
 
     if summary.get('images_with_exploitable_cve', 0) > 0:
-        print(f"\n🔴 Images with Exploitable CVE: {summary['images_with_exploitable_cve']}")
+        print(f"Images with Exploitable CVE: {summary['images_with_exploitable_cve']}")
 
     top = summary.get('top_vulnerable_images', [])
     if top:
