@@ -269,28 +269,29 @@ def main() -> int:
 
 
 def _print_k8s_summary(result: dict) -> None:
-    """K8s 스캔 요약"""
+    """K8s 스캔 요약 — canonical payload의 11개 배열에서 직접 카운트 계산."""
     payload = result.get("payload", {})
-    summary = payload.get("summary", {})
+
+    # canonical payload의 11개 배열
+    _CANONICAL_ARRAYS = [
+        "namespaces", "pods", "service_accounts", "roles", "cluster_roles",
+        "role_bindings", "cluster_role_bindings", "secrets",
+        "services", "ingresses", "network_policies",
+    ]
+    by_type = {k: len(payload.get(k) or []) for k in _CANONICAL_ARRAYS}
+    total = sum(by_type.values())
 
     print(f"\n{'='*50}")
     print("K8s Scan Summary")
     print(f"{'='*50}")
     print(f"Scan ID: {result.get('scan_id')}")
-    print(f"Status: {result.get('status')}")
-    print(f"Total Resources: {summary.get('total_resources', 0)}")
+    print(f"Status:  {result.get('status')}")
+    print(f"Total Resources: {total}")
 
     print("\nResources by Type:")
-    for rtype, count in sorted(summary.get('by_type', {}).items()):
+    for rtype, count in sorted(by_type.items()):
         if count > 0:
             print(f"  {rtype}: {count}")
-
-    sec = summary.get('security_indicators', {})
-    warnings = [(k, v) for k, v in sec.items() if v > 0]
-    if warnings:
-        print("\n⚠️  Security Indicators:")
-        for indicator, value in warnings:
-            print(f"  {indicator}: {value}")
 
 
 def _print_image_summary(result: dict) -> None:
