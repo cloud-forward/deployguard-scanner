@@ -16,6 +16,7 @@ DeployGuard K8s Scanner - Strict Canonical Raw Output Producer
   - security_context는 항상 full object (null 금지)
   - automount_service_account_token은 최종 boolean semantics
   - env_from_configmaps.env_vars는 실제 key 목록으로 채움
+  - env_from_secrets.env_vars는 envFrom 경로에서도 secret key 목록으로 채움
   - used_by_service_accounts는 sa.secrets + image_pull_secrets 둘 다 반영
 """
 from __future__ import annotations
@@ -38,6 +39,9 @@ from shared.orchestrator import ScanOrchestrator
 # ─────────────────────────────────────────────
 _ALLOWED_CLUSTER_TYPES = {"eks", "self-managed", "unknown"}
 
+# kube-public은 공개 namespace로 분석 불필요 (명세 §16)
+_EXCLUDED_NAMESPACES = {"kube-public"}
+
 
 def _to_iso8601(dt: Optional[datetime]) -> Optional[str]:
     if dt is None:
@@ -59,15 +63,21 @@ def _calculate_age_days(created_at: Optional[datetime]) -> Optional[int]:
 def _normalize_cluster_type(raw: str) -> str:
     """
     cluster_type을 문서 허용 값(eks / self-managed / unknown)으로 제한.
-    gke/aks 등 다른 값은 self-managed로 내려보내지 않고 unknown으로 처리.
-    EKS만 명시적으로 eks로 출력한다.
+
+    명세 §3:
+      - API Server version에 "eks"가 포함되면 "eks"
+      - 아니면 "self-managed"
+      - 판별 불가하면 "unknown"
+
+    gke/aks 등 타 관리형 K8s는 self-managed로 매핑한다.
     """
     lower = raw.lower()
     if lower == "eks":
         return "eks"
-    if lower in _ALLOWED_CLUSTER_TYPES:
-        return lower
-    return "unknown"
+    if lower == "unknown":
+        return "unknown"
+    # 명시적으로 알려진 타입이거나 그 외 모두 → self-managed
+    return "self-managed"
 
 
 def _default_security_context() -> Dict[str, Any]:
@@ -112,6 +122,8 @@ class K8sScanner:
         self._secret_used_by_sa: Dict[str, Dict[str, List[str]]] = {}
         # namespace → {cm_name → [key_list]}  (env_from_configmaps 보강용)
         self._cm_key_cache: Dict[str, Dict[str, List[str]]] = {}
+        # namespace → {secret_name → [key_list]}  (env_from_secrets envFrom 보강용)
+        self._secret_key_cache: Dict[str, Dict[str, List[str]]] = {}
         # namespace → {sa_name → bool}  (Pod effective automount 계산용)
         self._sa_automount_cache: Dict[str, Dict[str, bool]] = {}
 
@@ -137,16 +149,25 @@ class K8sScanner:
         self._detect_cluster_type()
 
     def _detect_cluster_type(self) -> None:
+        """
+        명세 §3 cluster_type 판별:
+          - git_version에 "eks" 포함 → "eks"
+          - 판별 성공했으나 eks 아님 → "self-managed"
+          - 예외 발생 → "unknown"
+        """
         try:
             git_version = (client.VersionApi().get_code().git_version or "").lower()
             if "eks" in git_version:
                 self.cluster_type = "eks"
             else:
-                self.cluster_type = "unknown"
+                self.cluster_type = "self-managed"
         except Exception:
             self.cluster_type = "unknown"
 
     def _should_scan_namespace(self, namespace: str) -> bool:
+        # 명세 §16: kube-public 제외
+        if namespace in _EXCLUDED_NAMESPACES:
+            return False
         if namespace == "kube-system":
             return self.config.include_system_namespaces
         if namespace in self.config.exclude_namespaces:
@@ -232,20 +253,25 @@ class K8sScanner:
     def _collect_all_resources(self) -> Dict[str, List[Any]]:
         """
         수집 순서:
-          1. configmaps        — cm_key_cache 구축 (pod env_vars 보강에 필요)
-          2. service_accounts  — _sa_automount_cache 구축 (pod effective automount에 필요)
-          3. pods              — sa cache + cm cache 참조
-          4. secrets           — used_by_pods / used_by_service_accounts 최종 반영
+          1. secrets_for_cache  — _secret_key_cache 구축 (pod env_from_secrets envFrom 보강)
+          2. configmaps         — _cm_key_cache 구축 (pod env_vars 보강에 필요)
+          3. service_accounts   — _sa_automount_cache 구축 (pod effective automount에 필요)
+          4. pods               — 위 세 cache 모두 참조
+          5. secrets            — used_by_pods / used_by_service_accounts 최종 반영
           그 외 순서 무관
         """
         print("[*] Collecting K8s resources...")
         resources: Dict[str, List[Any]] = {}
 
+        # ── Step 0: secret key cache 선수 구축 (pods 수집 전) ─────────
+        # canonical payload에 포함되지 않는 내부 전처리 단계
+        self._build_secret_key_cache()
+
         # ── 순서 의존 수집 ─────────────────────────────────────────
         for name, collector in [
             ("configmaps",       self._collect_configmaps),       # cm_key_cache
             ("service_accounts", self._collect_service_accounts), # sa_automount_cache
-            ("pods",             self._collect_pods),             # 두 cache 참조
+            ("pods",             self._collect_pods),             # 세 cache 참조
             ("secrets",          self._collect_secrets),          # linkage 최종 반영
         ]:
             try:
@@ -278,6 +304,27 @@ class K8sScanner:
 
         return resources
 
+    def _build_secret_key_cache(self) -> None:
+        """
+        Secret key 목록을 사전 수집하여 _secret_key_cache 구축.
+
+        이 cache는 envFrom.secretRef 경로에서 env_from_secrets.env_vars를
+        실제 key 목록으로 채우기 위해 필요하다.
+
+        Secret value는 수집하지 않는다 — key 이름만.
+        """
+        try:
+            for secret in self.core_v1.list_secret_for_all_namespaces().items:
+                namespace = secret.metadata.namespace
+                name = secret.metadata.name
+                secret_type = secret.type or "Opaque"
+                if secret_type == "kubernetes.io/service-account-token":
+                    continue
+                keys = sorted((secret.data or {}).keys())
+                self._secret_key_cache.setdefault(namespace, {})[name] = keys
+        except Exception as e:
+            print(f"    ✗ secret_key_cache: ERROR - {e}")
+
     # ══════════════════════════════════════════════════════════════════
     # Namespace
     # ══════════════════════════════════════════════════════════════════
@@ -285,8 +332,12 @@ class K8sScanner:
     def _collect_namespaces(self) -> List[Dict[str, Any]]:
         items = []
         for ns in self.core_v1.list_namespace().items:
+            name = ns.metadata.name
+            # kube-public은 payload에도 포함하지 않는다
+            if name in _EXCLUDED_NAMESPACES:
+                continue
             items.append({
-                "name": ns.metadata.name,
+                "name": name,
                 "labels": ns.metadata.labels or {},
                 "annotations": ns.metadata.annotations or {},
                 "status": ns.status.phase or "Unknown",
@@ -309,7 +360,7 @@ class K8sScanner:
             name = cm.metadata.name
             keys = sorted((cm.data or {}).keys())
 
-            # cache 구축
+            # cache 구축 (필터 없이 전체 — pod가 어떤 namespace의 cm도 참조할 수 있음)
             self._cm_key_cache.setdefault(namespace, {})[name] = keys
 
             if not self._should_scan_namespace(namespace):
@@ -333,6 +384,7 @@ class K8sScanner:
             if not self._should_scan_namespace(namespace):
                 continue
             phase = pod.status.phase or "Unknown"
+            # 명세 §16: 종료된 Pod 제외
             if phase in ("Succeeded", "Failed"):
                 continue
 
@@ -356,7 +408,7 @@ class K8sScanner:
                 for c in (pod.spec.init_containers or [])
             ]
 
-            # owner
+            # owner (명세에 없으나 유용한 raw metadata — 해석 필드 아님)
             owner_kind, owner_name = None, None
             for owner in (pod.metadata.owner_references or []):
                 if owner.controller:
@@ -497,8 +549,16 @@ class K8sScanner:
         for ef in (container.env_from or []):
             if ef.secret_ref and ef.secret_ref.name:
                 sname = ef.secret_ref.name
+                # [FIX] envFrom.secretRef 경로: secret_key_cache에서 실제 key 목록 채움
+                # 명세 §4 env_from_secrets: "Secret의 모든 key"를 env_vars에 넣어야 한다
+                keys = self._secret_key_cache.get(namespace, {}).get(sname, [])
                 if sname not in env_from_secrets:
                     env_from_secrets[sname] = []
+                existing = set(env_from_secrets[sname])
+                for k in keys:
+                    if k not in existing:
+                        env_from_secrets[sname].append(k)
+                        existing.add(k)
                 self._track_secret_pod(namespace, sname, pod_name)
 
             if ef.config_map_ref and ef.config_map_ref.name:
@@ -506,11 +566,11 @@ class K8sScanner:
                 keys = self._cm_key_cache.get(namespace, {}).get(cmname, [])
                 if cmname not in env_from_configmaps:
                     env_from_configmaps[cmname] = []
-                # merge existing keys
                 existing = set(env_from_configmaps[cmname])
                 for k in keys:
                     if k not in existing:
                         env_from_configmaps[cmname].append(k)
+                        existing.add(k)
                 self._track_cm_pod(namespace, cmname, pod_name)
 
         # env individual valueFrom
@@ -521,7 +581,8 @@ class K8sScanner:
                 sname = env.value_from.secret_key_ref.name
                 if sname not in env_from_secrets:
                     env_from_secrets[sname] = []
-                env_from_secrets[sname].append(env.name)
+                if env.name not in env_from_secrets[sname]:
+                    env_from_secrets[sname].append(env.name)
                 self._track_secret_pod(namespace, sname, pod_name)
 
             if env.value_from.config_map_key_ref and env.value_from.config_map_key_ref.name:
@@ -532,7 +593,7 @@ class K8sScanner:
                     env_from_configmaps[cmname].append(env.name)
                 self._track_cm_pod(namespace, cmname, pod_name)
 
-        # serialise as sorted lists
+        # serialise as sorted lists (determinism)
         efs_list = [
             {"secret_name": k, "env_vars": sorted(v)}
             for k, v in sorted(env_from_secrets.items())
@@ -637,7 +698,7 @@ class K8sScanner:
                 continue
 
             secret_type = secret.type or "Opaque"
-            # SA 토큰 제외
+            # 명세 §16: SA 토큰 제외
             if secret_type == "kubernetes.io/service-account-token":
                 continue
 
@@ -672,7 +733,7 @@ class K8sScanner:
         for role in self.rbac_v1.list_role_for_all_namespaces().items:
             if not self._should_scan_namespace(role.metadata.namespace):
                 continue
-            items.append(self._parse_role(role, role.metadata.namespace, is_cluster=False))
+            items.append(self._parse_role(role, role.metadata.namespace))
         return items
 
     def _collect_cluster_roles(self) -> List[Dict[str, Any]]:
@@ -681,10 +742,10 @@ class K8sScanner:
             name = cr.metadata.name
             if name.startswith("system:") and not self.config.include_system_namespaces:
                 continue
-            items.append(self._parse_role(cr, namespace=None, is_cluster=True))
+            items.append(self._parse_role(cr, namespace=None))
         return items
 
-    def _parse_role(self, role, namespace: Optional[str], is_cluster: bool) -> Dict[str, Any]:
+    def _parse_role(self, role, namespace: Optional[str]) -> Dict[str, Any]:
         rules = []
         for r in (role.rules or []):
             rules.append({
@@ -712,7 +773,7 @@ class K8sScanner:
         for rb in self.rbac_v1.list_role_binding_for_all_namespaces().items:
             if not self._should_scan_namespace(rb.metadata.namespace):
                 continue
-            items.append(self._parse_binding(rb, rb.metadata.namespace, is_cluster=False))
+            items.append(self._parse_binding(rb, rb.metadata.namespace))
         return items
 
     def _collect_cluster_role_bindings(self) -> List[Dict[str, Any]]:
@@ -721,10 +782,10 @@ class K8sScanner:
             name = crb.metadata.name
             if name.startswith("system:") and not self.config.include_system_namespaces:
                 continue
-            items.append(self._parse_binding(crb, namespace=None, is_cluster=True))
+            items.append(self._parse_binding(crb, namespace=None))
         return items
 
-    def _parse_binding(self, binding, namespace: Optional[str], is_cluster: bool) -> Dict[str, Any]:
+    def _parse_binding(self, binding, namespace: Optional[str]) -> Dict[str, Any]:
         subjects = []
         for s in (binding.subjects or []):
             subjects.append({
@@ -756,6 +817,9 @@ class K8sScanner:
           - 숫자 target_port  → target_port=int,  target_port_name=null
           - 문자열 target_port → target_port=null, target_port_name=string
         판단 필드(is_external, is_loadbalancer 등) 없음.
+
+        [FIX] 필드명: 명세는 external_ip (단수) 사용.
+        호환성을 위해 external_ips (배열) 유지하되 external_ip (첫 번째 값) 도 함께 제공.
         """
         items = []
         for svc in self.core_v1.list_service_for_all_namespaces().items:
@@ -793,6 +857,8 @@ class K8sScanner:
                     "node_port": p.node_port,
                 })
 
+            raw_external_ips: List[str] = sorted(svc.spec.external_i_ps or [])
+
             items.append({
                 "namespace": namespace,
                 "name": svc.metadata.name,
@@ -800,7 +866,9 @@ class K8sScanner:
                 "annotations": svc.metadata.annotations or {},
                 "type": svc.spec.type,
                 "cluster_ip": svc.spec.cluster_ip,
-                "external_ips": sorted(svc.spec.external_i_ps or []),
+                # [FIX] 명세 §11 필드명은 external_ip (단수). 배열은 external_ips로 별도 제공.
+                "external_ip": raw_external_ips[0] if raw_external_ips else None,
+                "external_ips": raw_external_ips,
                 "load_balancer_ip": svc.spec.load_balancer_ip,
                 "load_balancer_ingress": lb_ingress,
                 "selector": svc.spec.selector or {},
