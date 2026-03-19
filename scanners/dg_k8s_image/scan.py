@@ -295,35 +295,42 @@ def _print_k8s_summary(result: dict) -> None:
 
 
 def _print_image_summary(result: dict) -> None:
-    """Image 스캔 요약"""
+    """Image 스캔 요약 — payload["run_summary"] + payload["images"] 기반."""
     payload = result.get("payload", {})
-    summary = payload.get("summary", {})
+    run_summary = payload.get("run_summary", {})
+    images = payload.get("images", [])
 
     print(f"\n{'='*50}")
     print("Image Scan Summary")
     print(f"{'='*50}")
     print(f"Scan ID: {result.get('scan_id')}")
     print(f"Status: {result.get('status')}")
-    print(f"Total Images: {summary.get('total_images', 0)}")
-    print(f"Scanned: {summary.get('scanned_images', 0)}")
-    print(f"Skipped: {summary.get('skipped_images', 0)}")
+    print(f"Total Images: {run_summary.get('total_images', 0)}")
+    print(f"Completed: {run_summary.get('completed_images', 0)}")
+    print(f"Skipped: {run_summary.get('skipped_images', 0)}")
+    print(f"Failed: {run_summary.get('failed_images', 0)}")
+    print(f"Timeout: {run_summary.get('timeout_images', 0)}")
 
-    by_severity = summary.get('by_severity', {})
-    if any(v > 0 for v in by_severity.values()):
+    # severity 집계: 각 image의 vulnerability_summary에서 직접 합산
+    sev_totals = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+    exploitable_count = 0
+    for img in images:
+        vs = img.get("vulnerability_summary", {})
+        sev_totals["CRITICAL"] += vs.get("critical", 0)
+        sev_totals["HIGH"]     += vs.get("high", 0)
+        sev_totals["MEDIUM"]   += vs.get("medium", 0)
+        sev_totals["LOW"]      += vs.get("low", 0)
+        if vs.get("has_known_exploitable_cve"):
+            exploitable_count += 1
+
+    if any(v > 0 for v in sev_totals.values()):
         print("\nVulnerabilities:")
-        for sev in ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']:
-            count = by_severity.get(sev, 0)
+        for sev, count in sev_totals.items():
             if count > 0:
                 print(f"  {sev}: {count}")
 
-    if summary.get('images_with_exploitable_cve', 0) > 0:
-        print(f"Images with Exploitable CVE: {summary['images_with_exploitable_cve']}")
-
-    top = summary.get('top_vulnerable_images', [])
-    if top:
-        print("\nTop Vulnerable Images:")
-        for img in top[:5]:
-            print(f"  {img['image'][:50]}... C={img['critical']} H={img['high']}")
+    if exploitable_count > 0:
+        print(f"Images with Known Exploitable CVE: {exploitable_count}")
 
 
 if __name__ == "__main__":
