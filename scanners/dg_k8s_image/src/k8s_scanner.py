@@ -821,10 +821,9 @@ class K8sScanner:
             "name": binding.metadata.name,
             "labels": binding.metadata.labels or {},
             "subjects": subjects,
-            "role_ref": {
-                "kind": binding.role_ref.kind,
-                "name": binding.role_ref.name,
-            },
+            # fact 단: binding.get("role_ref_kind"), binding.get("role_ref_name") 으로 접근
+            "role_ref_kind": binding.role_ref.kind,
+            "role_ref_name": binding.role_ref.name,
         }
         if namespace is not None:
             result["namespace"] = namespace
@@ -906,6 +905,8 @@ class K8sScanner:
                 "lb_provisioned": lb_provisioned,
                 "has_node_port": has_node_port,
                 "selector": svc.spec.selector or {},
+                # fact 단: service.get("port")로 단일 포트 접근
+                "port": ports[0]["port"] if ports else None,
                 "ports": ports,
             })
         return items
