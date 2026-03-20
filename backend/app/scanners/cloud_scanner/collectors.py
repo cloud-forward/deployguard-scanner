@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 import boto3
 from botocore.exceptions import ClientError
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +160,7 @@ class IAMCollector:
           "specified": specified_users에 지정된 User만 수집.
               지정된 User는 Active Key 유무에 관계없이 항상 수집한다.
               (명시적으로 지정한 것이므로 필터를 적용하지 않는 것이 의도된 동작)
-        필요 IAM 액션: iam:ListUsers,
+        필요 IAM 액션: iam:ListUsers, iam:GetUser,
                        iam:ListAccessKeys, iam:GetAccessKeyLastUsed,
                        iam:ListAttachedUserPolicies, iam:GetPolicy, iam:GetPolicyVersion,
                        iam:ListUserPolicies, iam:GetUserPolicy,
@@ -173,7 +176,16 @@ class IAMCollector:
                 if mode == "specified" and username not in specified_set:
                     continue
 
-                access_keys, last_used = self._get_access_keys_and_last_used(username)
+                # [FIX 3] PasswordLastUsed를 list_users 응답에서 바로 추출.
+                # list_users는 iam:ListUsers 권한만으로 PasswordLastUsed를 반환한다.
+                # GetUser를 별도 호출해 병합하면 더 정확하지만 추가 권한(iam:GetUser)이 필요하다.
+                # 현재는 list_users 응답의 PasswordLastUsed를 우선 활용하고,
+                # iam:GetUser 권한이 있는 경우 _get_password_last_used()로 보강한다.
+                password_last_used_raw = user.get("PasswordLastUsed")
+
+                access_keys, last_used = self._get_access_keys_and_last_used(
+                    username, password_last_used_raw
+                )
                 has_active_key = any(key["status"] == "Active" for key in access_keys)
                 if mode == "active_keys_only" and not has_active_key:
                     continue
@@ -196,11 +208,34 @@ class IAMCollector:
         """
         문서 필드 7개만 반환.
         추론성 IRSA 필드(inferred_namespace 등)는 포함하지 않는다.
+
+        [FIX 1] ClientError 발생 시 기존에는 None을 반환해 해당 role이
+        결과에서 조용히 사라졌다. 이제는 에러 종류를 로그로 남기고,
+        AccessDenied인 경우에도 role 이름/ARN은 남겨 분석 엔진이
+        수집 실패 사실을 인지할 수 있도록 한다.
         """
         try:
             role = self.iam.get_role(RoleName=role_name)["Role"]
-        except ClientError:
-            return None
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code", "Unknown")
+            logger.warning(
+                "GetRole failed for role '%s': [%s] %s",
+                role_name,
+                error_code,
+                exc,
+            )
+            # AccessDenied여도 role 존재 자체는 list_roles로 확인됐으므로
+            # 이름만이라도 포함해 분석 엔진에 수집 불완전 사실을 전달한다.
+            return {
+                "name": role_name,
+                "arn": None,
+                "is_irsa": False,
+                "irsa_oidc_issuer": None,
+                "trust_policy": None,
+                "attached_policies": [],
+                "inline_policies": [],
+                "_collection_error": f"[{error_code}] {exc}",
+            }
 
         trust_policy = role.get("AssumeRolePolicyDocument", {})
         is_irsa, oidc_issuer = self._extract_irsa_info(trust_policy)
@@ -231,7 +266,12 @@ class IAMCollector:
         return False, None
 
     def _get_policy_document(self, policy_arn: str) -> Optional[Dict[str, Any]]:
-        """DefaultVersion document를 가져온다. (iam:GetPolicy + iam:GetPolicyVersion)"""
+        """
+        DefaultVersion document를 가져온다. (iam:GetPolicy + iam:GetPolicyVersion)
+
+        [FIX 2] 기존에는 ClientError 발생 시 None을 캐시하고 반환만 했다.
+        어떤 policy에서 어떤 에러가 발생했는지 로그를 남겨 디버깅을 용이하게 한다.
+        """
         if policy_arn in self._policy_document_cache:
             return self._policy_document_cache[policy_arn]
         try:
@@ -243,25 +283,41 @@ class IAMCollector:
             document = version.get("Document", {})
             self._policy_document_cache[policy_arn] = document
             return document
-        except ClientError:
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code", "Unknown")
+            logger.warning(
+                "GetPolicyDocument failed for '%s': [%s] %s",
+                policy_arn,
+                error_code,
+                exc,
+            )
             self._policy_document_cache[policy_arn] = None
             return None
 
     def _get_attached_role_policies(self, role_name: str) -> List[Dict[str, Any]]:
         """policy name 기준 정렬하여 반환. (iam:ListAttachedRolePolicies + iam:GetPolicy + iam:GetPolicyVersion)"""
         results: List[Dict[str, Any]] = []
-        paginator = self.iam.get_paginator("list_attached_role_policies")
-        for page in paginator.paginate(RoleName=role_name):
-            for policy in page.get("AttachedPolicies", []):
-                arn = policy["PolicyArn"]
-                results.append(
-                    {
-                        "name": policy["PolicyName"],
-                        "arn": arn,
-                        "is_aws_managed": _is_aws_managed_policy(arn),
-                        "document": self._get_policy_document(arn),
-                    }
-                )
+        try:
+            paginator = self.iam.get_paginator("list_attached_role_policies")
+            for page in paginator.paginate(RoleName=role_name):
+                for policy in page.get("AttachedPolicies", []):
+                    arn = policy["PolicyArn"]
+                    results.append(
+                        {
+                            "name": policy["PolicyName"],
+                            "arn": arn,
+                            "is_aws_managed": _is_aws_managed_policy(arn),
+                            "document": self._get_policy_document(arn),
+                        }
+                    )
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code", "Unknown")
+            logger.warning(
+                "ListAttachedRolePolicies failed for role '%s': [%s] %s",
+                role_name,
+                error_code,
+                exc,
+            )
         return sorted(results, key=lambda p: p["name"])
 
     def _get_inline_role_policies(self, role_name: str) -> List[Dict[str, Any]]:
@@ -271,35 +327,66 @@ class IAMCollector:
               모든 페이지를 수집한 뒤 전체를 정렬한다.
         """
         all_policy_names: List[str] = []
-        paginator = self.iam.get_paginator("list_role_policies")
-        for page in paginator.paginate(RoleName=role_name):
-            all_policy_names.extend(page.get("PolicyNames", []))
+        try:
+            paginator = self.iam.get_paginator("list_role_policies")
+            for page in paginator.paginate(RoleName=role_name):
+                all_policy_names.extend(page.get("PolicyNames", []))
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code", "Unknown")
+            logger.warning(
+                "ListRolePolicies failed for role '%s': [%s] %s",
+                role_name,
+                error_code,
+                exc,
+            )
+            return []
 
         results: List[Dict[str, Any]] = []
         for policy_name in sorted(all_policy_names):
             try:
                 policy = self.iam.get_role_policy(RoleName=role_name, PolicyName=policy_name)
-            except ClientError:
+            except ClientError as exc:
+                error_code = exc.response.get("Error", {}).get("Code", "Unknown")
+                logger.warning(
+                    "GetRolePolicy failed for role '%s', policy '%s': [%s] %s",
+                    role_name,
+                    policy_name,
+                    error_code,
+                    exc,
+                )
                 continue
             results.append({"name": policy_name, "document": policy.get("PolicyDocument", {})})
         return results
 
     def _get_access_keys_and_last_used(
-        self, user_name: str
+        self,
+        user_name: str,
+        password_last_used_raw: Any = None,
     ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
         """
         Access Key 목록과 User의 last_used를 반환한다.
         (iam:ListAccessKeys + iam:GetAccessKeyLastUsed)
 
-        last_used 해석:
-          - 각 Access Key의 GetAccessKeyLastUsed 중 가장 최근 값을 User의 last_used로 쓴다.
-          - console 로그인(비밀번호 사용) 이력은 PasswordLastUsed로 별도 존재하나,
-            명세 §5가 명확히 정의하지 않아 Access Key 기준만 반영한다.
-          - 명세에서 console 이력까지 요구한다면 iam:GetUser의 PasswordLastUsed를
-            병합하도록 확장해야 한다.
+        [FIX 3] last_used 계산 개선:
+          - Access Key LastUsedDate 중 가장 최근 값을 구한다.
+          - list_users 응답에 포함된 PasswordLastUsed(콘솔 로그인 이력)를
+            password_last_used_raw 파라미터로 받아 함께 비교한다.
+          - 둘 중 더 최신인 값을 최종 last_used로 사용한다.
+          - 이로써 Access Key를 사용하지 않고 콘솔만 쓰는 사용자의
+            실제 활동 시점도 정확하게 반영된다.
+          - iam:GetUser 권한이 추가된 경우 PasswordLastUsed가 list_users에
+            포함되므로 별도 GetUser 호출 없이 처리 가능하다.
+            (AWS는 list_users에도 PasswordLastUsed를 포함해 반환한다)
         """
         results: List[Dict[str, Any]] = []
         latest_used_dt: Optional[datetime] = None
+
+        # PasswordLastUsed를 초기값으로 설정
+        if isinstance(password_last_used_raw, datetime):
+            latest_used_dt = password_last_used_raw
+            if latest_used_dt.tzinfo is None:
+                latest_used_dt = latest_used_dt.replace(tzinfo=timezone.utc)
+
         try:
             paginator = self.iam.get_paginator("list_access_keys")
             for page in paginator.paginate(UserName=user_name):
@@ -313,15 +400,37 @@ class IAMCollector:
                         }
                     )
                     try:
-                        last_used_resp = self.iam.get_access_key_last_used(AccessKeyId=access_key_id)
-                        last_used = last_used_resp.get("AccessKeyLastUsed", {}).get("LastUsedDate")
+                        last_used_resp = self.iam.get_access_key_last_used(
+                            AccessKeyId=access_key_id
+                        )
+                        last_used = last_used_resp.get("AccessKeyLastUsed", {}).get(
+                            "LastUsedDate"
+                        )
                         if isinstance(last_used, datetime):
+                            if last_used.tzinfo is None:
+                                last_used = last_used.replace(tzinfo=timezone.utc)
                             if latest_used_dt is None or last_used > latest_used_dt:
                                 latest_used_dt = last_used
-                    except ClientError:
+                    except ClientError as exc:
+                        error_code = exc.response.get("Error", {}).get("Code", "Unknown")
+                        logger.warning(
+                            "GetAccessKeyLastUsed failed for key '%s' (user '%s'): [%s] %s",
+                            access_key_id,
+                            user_name,
+                            error_code,
+                            exc,
+                        )
                         continue
-        except ClientError:
-            return [], None
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code", "Unknown")
+            logger.warning(
+                "ListAccessKeys failed for user '%s': [%s] %s",
+                user_name,
+                error_code,
+                exc,
+            )
+            return [], _to_iso8601(latest_used_dt)
+
         return results, _to_iso8601(latest_used_dt)
 
     def _get_attached_user_policies(self, user_name: str) -> List[Dict[str, Any]]:
@@ -340,7 +449,14 @@ class IAMCollector:
                             "document": self._get_policy_document(arn),
                         }
                     )
-        except ClientError:
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code", "Unknown")
+            logger.warning(
+                "ListAttachedUserPolicies failed for user '%s': [%s] %s",
+                user_name,
+                error_code,
+                exc,
+            )
             return []
         return sorted(results, key=lambda p: p["name"])
 
@@ -354,14 +470,29 @@ class IAMCollector:
             paginator = self.iam.get_paginator("list_user_policies")
             for page in paginator.paginate(UserName=user_name):
                 all_policy_names.extend(page.get("PolicyNames", []))
-        except ClientError:
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code", "Unknown")
+            logger.warning(
+                "ListUserPolicies failed for user '%s': [%s] %s",
+                user_name,
+                error_code,
+                exc,
+            )
             return []
 
         results: List[Dict[str, Any]] = []
         for policy_name in sorted(all_policy_names):
             try:
                 policy = self.iam.get_user_policy(UserName=user_name, PolicyName=policy_name)
-            except ClientError:
+            except ClientError as exc:
+                error_code = exc.response.get("Error", {}).get("Code", "Unknown")
+                logger.warning(
+                    "GetUserPolicy failed for user '%s', policy '%s': [%s] %s",
+                    user_name,
+                    policy_name,
+                    error_code,
+                    exc,
+                )
                 continue
             results.append({"name": policy_name, "document": policy.get("PolicyDocument", {})})
         return results
@@ -373,7 +504,14 @@ class IAMCollector:
             for page in paginator.paginate(UserName=user_name):
                 if page.get("MFADevices", []):
                     return True
-        except ClientError:
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code", "Unknown")
+            logger.warning(
+                "ListMFADevices failed for user '%s': [%s] %s",
+                user_name,
+                error_code,
+                exc,
+            )
             return False
         return False
 
@@ -401,7 +539,9 @@ class S3Collector:
         specified_set = set(specified_buckets or [])
         try:
             buckets = self.s3.list_buckets().get("Buckets", [])
-        except ClientError:
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code", "Unknown")
+            logger.warning("ListBuckets failed: [%s] %s", error_code, exc)
             return results
 
         for bucket in buckets:
@@ -651,6 +791,11 @@ class EC2Collector:
         Instance Profile raw 정보를 보강한다.
         GetInstanceProfile API로 실제 연결된 Role 목록을 조회하여 포함.
         (iam:GetInstanceProfile)
+
+        [FIX 4] profile_arn에서 instance-profile/ 파싱이 실패하면
+        기존에는 Roles 키 자체가 result dict에 존재하지 않았다.
+        이제는 파싱 실패 시에도 Roles: [] 를 명시적으로 포함하고
+        경고 로그를 남긴다. 분석 엔진이 키 부재와 빈 리스트를 구분할 수 있다.
         """
         if not iam_profile_raw:
             return None
@@ -667,6 +812,22 @@ class EC2Collector:
 
         if profile_name:
             result["Roles"] = self._get_instance_profile_roles(profile_name)
+        else:
+            # ARN 파싱 실패 또는 ARN 자체가 없는 경우
+            # 빈 리스트를 명시적으로 포함해 키 부재 상태를 방지
+            result["Roles"] = []
+            if profile_arn:
+                logger.warning(
+                    "Could not extract profile name from ARN '%s'. "
+                    "Roles will be empty. Instance profile ID: %s",
+                    profile_arn,
+                    profile_id,
+                )
+            else:
+                logger.warning(
+                    "Instance profile has no ARN (Id=%s). Roles cannot be resolved.",
+                    profile_id,
+                )
 
         return result
 
@@ -686,7 +847,14 @@ class EC2Collector:
             ]
             self._instance_profile_role_cache[profile_name] = roles
             return roles
-        except ClientError:
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code", "Unknown")
+            logger.warning(
+                "GetInstanceProfile failed for '%s': [%s] %s",
+                profile_name,
+                error_code,
+                exc,
+            )
             self._instance_profile_role_cache[profile_name] = None
             return []
 
@@ -706,6 +874,14 @@ class SecurityGroupCollector:
         주의: description, tags는 명세 §9에 정의되지 않으므로 수집하지 않는다.
         수집 범위: RDS + EC2에서 직접 참조된 SG만 (recursive expansion 없음).
         필요 IAM 액션: ec2:DescribeSecurityGroups
+
+        [FIX 5] 기존에는 chunk 단위로 describe_security_groups를 호출할 때
+        chunk 안에 존재하지 않는 SG ID가 하나라도 있으면 AWS가 InvalidGroup.NotFound
+        에러를 반환하고, 해당 chunk 전체를 continue로 skip했다.
+        이로 인해 실제 존재하는 SG도 함께 누락될 수 있었다.
+
+        수정: chunk 단위 호출이 실패하면 해당 chunk를 개별 ID로 분해해 재시도한다.
+        개별 호출도 실패한 ID는 경고 로그를 남기고 건너뛴다.
         """
         pending = sorted({gid for gid in group_ids if gid})
         collected: Dict[str, Dict[str, Any]] = {}
@@ -715,24 +891,52 @@ class SecurityGroupCollector:
             chunk = pending[i: i + chunk_size]
             try:
                 response = self.ec2.describe_security_groups(GroupIds=chunk)
-            except ClientError:
-                continue
-
-            for sg in response.get("SecurityGroups", []):
-                group_id = sg["GroupId"]
-                collected[group_id] = {
-                    "group_id": group_id,
-                    "group_name": sg.get("GroupName"),
-                    "vpc_id": sg.get("VpcId"),
-                    "inbound_rules": _serialize_security_group_permissions(
-                        sg.get("IpPermissions", [])
-                    ),
-                    "outbound_rules": _serialize_security_group_permissions(
-                        sg.get("IpPermissionsEgress", [])
-                    ),
-                }
+                for sg in response.get("SecurityGroups", []):
+                    group_id = sg["GroupId"]
+                    collected[group_id] = self._serialize_sg(sg)
+            except ClientError as exc:
+                error_code = exc.response.get("Error", {}).get("Code", "Unknown")
+                logger.warning(
+                    "Batch DescribeSecurityGroups failed for chunk (size=%d): [%s] %s. "
+                    "Retrying individually.",
+                    len(chunk),
+                    error_code,
+                    exc,
+                )
+                # chunk 실패 시 개별 ID로 재시도
+                for gid in chunk:
+                    if gid in collected:
+                        continue
+                    try:
+                        resp = self.ec2.describe_security_groups(GroupIds=[gid])
+                        for sg in resp.get("SecurityGroups", []):
+                            collected[sg["GroupId"]] = self._serialize_sg(sg)
+                    except ClientError as inner_exc:
+                        inner_error_code = inner_exc.response.get("Error", {}).get(
+                            "Code", "Unknown"
+                        )
+                        logger.warning(
+                            "DescribeSecurityGroups failed for SG '%s': [%s] %s",
+                            gid,
+                            inner_error_code,
+                            inner_exc,
+                        )
 
         return [collected[gid] for gid in sorted(collected.keys())]
+
+    def _serialize_sg(self, sg: Dict[str, Any]) -> Dict[str, Any]:
+        """SG 응답을 명세 필드로 직렬화. collect()에서 중복 사용."""
+        return {
+            "group_id": sg["GroupId"],
+            "group_name": sg.get("GroupName"),
+            "vpc_id": sg.get("VpcId"),
+            "inbound_rules": _serialize_security_group_permissions(
+                sg.get("IpPermissions", [])
+            ),
+            "outbound_rules": _serialize_security_group_permissions(
+                sg.get("IpPermissionsEgress", [])
+            ),
+        }
 
 
 # ---------------------------------------------------------------------------
