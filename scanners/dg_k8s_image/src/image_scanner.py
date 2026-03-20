@@ -66,6 +66,7 @@ PUBLIC_REGISTRIES: frozenset = frozenset({
 # Trivy DB 경로 — initContainer가 채우는 경로와 일치해야 한다
 # ---------------------------------------------------------------------------
 _TRIVY_DB_PATHS = [
+    "/tmp/trivy-cache/db/trivy.db",          # [FIX] TRIVY_CACHE_DIR=/tmp/trivy-cache (user 1000 접근 가능)
     os.path.expanduser("~/.cache/trivy/db/trivy.db"),
     "/root/.cache/trivy/db/trivy.db",
     "/home/scanner/.cache/trivy/db/trivy.db",

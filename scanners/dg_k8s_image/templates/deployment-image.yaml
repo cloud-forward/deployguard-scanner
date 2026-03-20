@@ -30,6 +30,10 @@ spec:
       {{- end }}
       # [FIX] initContainer가 trivy-cache volume에 DB를 다운로드한 뒤
       # 메인 컨테이너가 동일 volume을 마운트하여 --skip-db-update 사용 가능
+      # [FIX] initContainer가 trivy-cache volume에 DB를 다운로드한 뒤
+      # 메인 컨테이너가 동일 volume을 마운트하여 --skip-db-update 사용 가능
+      # runAsUser: 1000 으로 통일하여 권한 문제 방지
+      # cache 경로를 /tmp/trivy-cache 로 통일 (/root 는 user 1000 접근 불가)
       initContainers:
         - name: trivy-db-init
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -39,10 +43,17 @@ spec:
             - image
             - --download-db-only
             - --cache-dir
-            - /root/.cache/trivy
+            - /tmp/trivy-cache
+          securityContext:
+            runAsUser: 1000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           volumeMounts:
             - name: trivy-cache
-              mountPath: /root/.cache/trivy
+              mountPath: /tmp/trivy-cache
           resources:
             requests:
               cpu: 100m
@@ -79,6 +90,8 @@ spec:
             # [FIX] initContainer가 DB를 채운 뒤이므로 skip-db-update 활성화
             - name: DG_TRIVY_SKIP_DB_UPDATE
               value: "true"
+            - name: TRIVY_CACHE_DIR
+              value: /tmp/trivy-cache
           envFrom:
             - configMapRef:
                 name: {{ include "deployguard-scanner.fullname" . }}-config
@@ -116,7 +129,7 @@ spec:
             - name: tmp
               mountPath: /tmp
             - name: trivy-cache
-              mountPath: /root/.cache/trivy
+              mountPath: /tmp/trivy-cache
       volumes:
         - name: tmp
           emptyDir: {}
