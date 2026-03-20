@@ -154,7 +154,7 @@ class CloudScanner:
         ec2_instances, ec2_sg_ids = ec2.collect_instances()
 
         # SG 수집 범위: RDS + EC2에서 직접 참조된 SG만 (recursive expansion 없음)
-        security_groups, collected_sg_ids = sg.collect(sorted(rds_sg_ids | ec2_sg_ids))
+        security_groups, _ = sg.collect(sorted(rds_sg_ids | ec2_sg_ids))
 
         return build_aws_payload(
             scan_id=scan_id,
@@ -166,7 +166,6 @@ class CloudScanner:
             rds_instances=rds_instances,
             ec2_instances=ec2_instances,
             security_groups=security_groups,
-            collected_sg_ids=collected_sg_ids,
         )
 
     def save_json(self, payload: Dict[str, Any]) -> str:
