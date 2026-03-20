@@ -149,8 +149,14 @@ class IAMCollector:
         specified_users: Optional[Sequence[str]] = None,
     ) -> List[Dict[str, Any]]:
         """
-        IAM User 수집.
-        mode: "active_keys_only" (기본, console-only 제외) / "all" / "specified"
+        IAM User 수집 (명세 §5).
+        mode:
+          "active_keys_only" (기본): Active Access Key가 있는 User만 수집.
+              console-only User는 자연스럽게 제외된다.
+          "all": 전체 User 수집.
+          "specified": specified_users에 지정된 User만 수집.
+              지정된 User는 Active Key 유무에 관계없이 항상 수집한다.
+              (명시적으로 지정한 것이므로 필터를 적용하지 않는 것이 의도된 동작)
         필요 IAM 액션: iam:ListUsers,
                        iam:ListAccessKeys, iam:GetAccessKeyLastUsed,
                        iam:ListAttachedUserPolicies, iam:GetPolicy, iam:GetPolicyVersion,
@@ -281,7 +287,17 @@ class IAMCollector:
     def _get_access_keys_and_last_used(
         self, user_name: str
     ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
-        """(iam:ListAccessKeys + iam:GetAccessKeyLastUsed)"""
+        """
+        Access Key 목록과 User의 last_used를 반환한다.
+        (iam:ListAccessKeys + iam:GetAccessKeyLastUsed)
+
+        last_used 해석:
+          - 각 Access Key의 GetAccessKeyLastUsed 중 가장 최근 값을 User의 last_used로 쓴다.
+          - console 로그인(비밀번호 사용) 이력은 PasswordLastUsed로 별도 존재하나,
+            명세 §5가 명확히 정의하지 않아 Access Key 기준만 반영한다.
+          - 명세에서 console 이력까지 요구한다면 iam:GetUser의 PasswordLastUsed를
+            병합하도록 확장해야 한다.
+        """
         results: List[Dict[str, Any]] = []
         latest_used_dt: Optional[datetime] = None
         try:
@@ -452,10 +468,12 @@ class RDSCollector:
         specified_identifiers: Optional[Sequence[str]] = None,
     ) -> Tuple[List[Dict[str, Any]], Set[str]]:
         """
-        문서 필수 필드: identifier, arn, engine, storage_encrypted,
-                        publicly_accessible, vpc_security_groups
-        endpoint: downstream raw 연결(IRSA Bridge Builder host exact match)용으로 유지.
-        engine_version: 문서 미포함이므로 제거.
+        문서 필수 필드(명세 §7): identifier, arn, engine, engine_version,
+                                  storage_encrypted, publicly_accessible,
+                                  vpc_security_groups
+        endpoint: 명세 외 필드이나 downstream raw 연결(IRSA Bridge Builder
+                  host exact match)용으로 유지한다. Analysis Engine 팀과
+                  계약 명시 필요.
         필요 IAM 액션: rds:DescribeDBInstances
         """
         results: List[Dict[str, Any]] = []
@@ -484,10 +502,11 @@ class RDSCollector:
                         "identifier": identifier,
                         "arn": db.get("DBInstanceArn"),
                         "engine": db.get("Engine"),
+                        "engine_version": db.get("EngineVersion"),  # 명세 §7 필수
                         "storage_encrypted": db.get("StorageEncrypted", False),
                         "publicly_accessible": db.get("PubliclyAccessible", False),
                         "vpc_security_groups": sg_ids,
-                        "endpoint": endpoint,
+                        "endpoint": endpoint,  # 명세 외, downstream 연결용
                     }
                 )
 
@@ -519,9 +538,15 @@ class EC2Collector:
 
     def collect_instances(self) -> Tuple[List[Dict[str, Any]], Set[str]]:
         """
-        문서 필수 필드 7개: instance_id, instance_type, private_ip,
-                            metadata_options, iam_instance_profile,
-                            security_groups, tags
+        명세 §8 필수 필드 6개: instance_id, instance_type,
+                               metadata_options, iam_instance_profile,
+                               security_groups, tags
+        주의: private_ip는 명세 §8 테이블에 정의되지 않으므로 수집하지 않는다.
+              downstream에서 필요하다면 명세 개정 후 추가할 것.
+        iam_instance_profile.Roles: 명세 초과 필드이나, 분석 보고서 P1
+              "instance profile → role 매핑 보강" 요구를 반영하여
+              GetInstanceProfile API로 실제 연결 Role을 포함한다.
+              iam:GetInstanceProfile 권한이 추가로 필요하다.
         필요 IAM 액션: ec2:DescribeInstances, iam:GetInstanceProfile
         """
         results: List[Dict[str, Any]] = []
@@ -553,7 +578,6 @@ class EC2Collector:
                         {
                             "instance_id": instance.get("InstanceId"),
                             "instance_type": instance.get("InstanceType"),
-                            "private_ip": instance.get("PrivateIpAddress"),
                             "metadata_options": _normalize_metadata_options(
                                 instance.get("MetadataOptions")
                             ),
@@ -677,8 +701,10 @@ class SecurityGroupCollector:
 
     def collect(self, group_ids: Sequence[str]) -> List[Dict[str, Any]]:
         """
-        입력 SG ID 집합만 조회하여 반환.
-        recursive expansion 없음 — RDS/EC2에서 직접 참조된 SG만 수집.
+        명세 §9 필수 필드: group_id, group_name, vpc_id,
+                           inbound_rules, outbound_rules
+        주의: description, tags는 명세 §9에 정의되지 않으므로 수집하지 않는다.
+        수집 범위: RDS + EC2에서 직접 참조된 SG만 (recursive expansion 없음).
         필요 IAM 액션: ec2:DescribeSecurityGroups
         """
         pending = sorted({gid for gid in group_ids if gid})
@@ -697,7 +723,6 @@ class SecurityGroupCollector:
                 collected[group_id] = {
                     "group_id": group_id,
                     "group_name": sg.get("GroupName"),
-                    "description": sg.get("Description"),
                     "vpc_id": sg.get("VpcId"),
                     "inbound_rules": _serialize_security_group_permissions(
                         sg.get("IpPermissions", [])
@@ -705,7 +730,6 @@ class SecurityGroupCollector:
                     "outbound_rules": _serialize_security_group_permissions(
                         sg.get("IpPermissionsEgress", [])
                     ),
-                    "tags": _tags_to_dict(sg.get("Tags", [])),
                 }
 
         return [collected[gid] for gid in sorted(collected.keys())]
