@@ -219,7 +219,15 @@ class ImageScanner:
             with urlopen(url, timeout=30) as resp:
                 compressed = resp.read()
             decompressed = gzip.decompress(compressed).decode("utf-8")
-            reader = csv.DictReader(StringIO(decompressed))
+
+            # [FIX] epss.cyentia.com CSV의 첫 줄은 "#model_version:..." 주석이다.
+            # csv.DictReader가 이 줄을 헤더로 읽으면 "cve" 컬럼을 찾지 못해
+            # 캐시가 빈 채로 _epss_loaded=True가 되어 전체 EPSS가 0.0이 된다.
+            # 주석 줄(#으로 시작)을 제거한 뒤 DictReader에 넘긴다.
+            lines = decompressed.splitlines()
+            filtered = "\n".join(line for line in lines if not line.startswith("#"))
+
+            reader = csv.DictReader(StringIO(filtered))
             count = 0
             for row in reader:
                 cve_id = row.get("cve")
@@ -733,12 +741,12 @@ class ImageScanner:
                     "epss_percentile": None,
                     "title": v.get("Title", ""),
                     "description": (v.get("Description") or "")[:500],
-                    "pkg_name": v.get("PkgName", ""),
+                    "package_name": v.get("PkgName", ""),
                     "installed_version": v.get("InstalledVersion", ""),
                     "fixed_version": v.get("FixedVersion") or None,
                     "fix_available": bool(v.get("FixedVersion")),
-                    "published_at": published_raw,
-                    "last_modified_at": last_modified_raw,
+                    "published_date": published_raw,
+                    "last_modified_date": last_modified_raw,
                     "references": (v.get("References") or [])[:5],
                     "target": target,
                     "target_type": target_type,
