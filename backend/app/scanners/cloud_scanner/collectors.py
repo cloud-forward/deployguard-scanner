@@ -228,12 +228,16 @@ class IAMCollector:
             # 이름만이라도 포함해 분석 엔진에 수집 불완전 사실을 전달한다.
             return {
                 "name": role_name,
+                "role_name": role_name,
                 "arn": None,
                 "is_irsa": False,
                 "irsa_oidc_issuer": None,
                 "trust_policy": None,
                 "attached_policies": [],
                 "inline_policies": [],
+                # fact 단에서 이 role을 건너뛸 수 있도록 명시적으로 표시.
+                # arn=None인 채로 fact를 만들면 "iam:None:role_name" broken node ID가 생성된다.
+                "fact_eligible": False,
                 "_collection_error": f"[{error_code}] {exc}",
             }
 
@@ -242,12 +246,18 @@ class IAMCollector:
 
         return {
             "name": role_name,
+            # fact 단 계약: IAMRoleScan(**role) 후 result.role_name으로 접근.
+            # "name"과 동일한 값이지만 IAMRoleScan dataclass 필드명과 일치시킨다.
+            "role_name": role_name,
             "arn": role["Arn"],
             "is_irsa": is_irsa,
             "irsa_oidc_issuer": oidc_issuer,
             "trust_policy": trust_policy,
             "attached_policies": self._get_attached_role_policies(role_name),
             "inline_policies": self._get_inline_role_policies(role_name),
+            # fact 단에서 이 role을 fact 생성 대상으로 사용해도 안전함을 나타낸다.
+            # arn이 보장되고 _collection_error가 없는 경우에만 True.
+            "fact_eligible": True,
         }
 
     def _extract_irsa_info(self, trust_policy: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
@@ -796,6 +806,20 @@ class EC2Collector:
         기존에는 Roles 키 자체가 result dict에 존재하지 않았다.
         이제는 파싱 실패 시에도 Roles: [] 를 명시적으로 포함하고
         경고 로그를 남긴다. 분석 엔진이 키 부재와 빈 리스트를 구분할 수 있다.
+
+        Roles 배열 shape (fact 단 계약):
+          [{"RoleName": str, "RoleArn": str}]
+
+        fact 단 "Arn" 필드 계약:
+          fact 단(aws_extractor._extract_instance_profile_facts)은
+          instance_profile.get("Arn").split("/")[-1] 로 role name을 추출한다.
+          따라서 "Arn" 필드는 instance profile ARN이 아닌 실제 role ARN
+          ("arn:aws:iam::ACCOUNT:role/ROLE_NAME") 이어야 한다.
+
+          원본 instance profile ARN은 "ProfileArn" 키로 별도 보존한다.
+
+          Role이 없거나(Roles=[]) 수집 실패 시 "Arn"은 None으로 두어
+          fact 단이 ARN 없음을 감지하고 fact 생성을 건너뛸 수 있게 한다.
         """
         if not iam_profile_raw:
             return None
@@ -803,7 +827,12 @@ class EC2Collector:
         profile_arn = iam_profile_raw.get("Arn") or None
         profile_id = iam_profile_raw.get("Id") or None
 
-        result: Dict[str, Any] = {"Arn": profile_arn, "Id": profile_id}
+        # 원본 instance profile ARN 보존 (ProfileArn)
+        # "Arn"은 아래에서 role ARN으로 덮어쓴다.
+        result: Dict[str, Any] = {
+            "ProfileArn": profile_arn,
+            "Id": profile_id,
+        }
 
         profile_name: Optional[str] = None
         if profile_arn and "instance-profile/" in profile_arn:
@@ -811,11 +840,14 @@ class EC2Collector:
             result["Name"] = profile_name
 
         if profile_name:
-            result["Roles"] = self._get_instance_profile_roles(profile_name)
+            roles = self._get_instance_profile_roles(profile_name)
+            result["Roles"] = roles
+            # fact 단 계약: "Arn" = 첫 번째 role의 RoleArn.
+            # role이 여럿인 경우는 IAM 정책상 불가능(instance profile은 role 1개).
+            result["Arn"] = roles[0]["RoleArn"] if roles else None
         else:
-            # ARN 파싱 실패 또는 ARN 자체가 없는 경우
-            # 빈 리스트를 명시적으로 포함해 키 부재 상태를 방지
             result["Roles"] = []
+            result["Arn"] = None
             if profile_arn:
                 logger.warning(
                     "Could not extract profile name from ARN '%s'. "
@@ -867,7 +899,7 @@ class SecurityGroupCollector:
     def __init__(self, session: boto3.Session, region: str) -> None:
         self.ec2 = session.client("ec2", region_name=region)
 
-    def collect(self, group_ids: Sequence[str]) -> List[Dict[str, Any]]:
+    def collect(self, group_ids: Sequence[str]) -> Tuple[List[Dict[str, Any]], Set[str]]:
         """
         명세 §9 필수 필드: group_id, group_name, vpc_id,
                            inbound_rules, outbound_rules
@@ -882,6 +914,12 @@ class SecurityGroupCollector:
 
         수정: chunk 단위 호출이 실패하면 해당 chunk를 개별 ID로 분해해 재시도한다.
         개별 호출도 실패한 ID는 경고 로그를 남기고 건너뛴다.
+
+        반환값: (sg_list, collected_sg_ids)
+          collected_sg_ids: 실제 수집에 성공한 group_id의 set.
+          fact 단에서 rds.vpc_security_groups / ec2.security_groups의 sg_id가
+          이 set에 없으면 수집 실패한 SG이므로 SECURITY_GROUP_ALLOWS fact를
+          생성하지 않아야 한다. (dangling node 방지)
         """
         pending = sorted({gid for gid in group_ids if gid})
         collected: Dict[str, Dict[str, Any]] = {}
@@ -922,7 +960,9 @@ class SecurityGroupCollector:
                             inner_exc,
                         )
 
-        return [collected[gid] for gid in sorted(collected.keys())]
+        sg_list = [collected[gid] for gid in sorted(collected.keys())]
+        collected_sg_ids: Set[str] = set(collected.keys())
+        return sg_list, collected_sg_ids
 
     def _serialize_sg(self, sg: Dict[str, Any]) -> Dict[str, Any]:
         """SG 응답을 명세 필드로 직렬화. collect()에서 중복 사용."""
@@ -954,10 +994,17 @@ def build_aws_payload(
     rds_instances: List[Dict[str, Any]],
     ec2_instances: List[Dict[str, Any]],
     security_groups: List[Dict[str, Any]],
+    collected_sg_ids: Optional[Set[str]] = None,
 ) -> Dict[str, Any]:
     """
     문서 정의 top-level 8개 필드만 반환.
     운영 메타는 complete_scan(meta=...)으로만 전달.
+
+    collected_sg_ids: SecurityGroupCollector.collect()가 반환한 실제 수집 성공 SG ID set.
+      fact 단에서 rds/ec2가 참조하는 sg_id가 이 set에 없으면 수집 실패한 SG이므로
+      SECURITY_GROUP_ALLOWS fact를 만들지 않아야 한다.
+      None이면 하위호환 — 빈 set()가 아닌 None을 그대로 내려보내 fact 단이
+      "정보 없음"과 "수집 성공 0개"를 구분할 수 있게 한다.
     """
     return {
         "scan_id": scan_id,
@@ -970,4 +1017,8 @@ def build_aws_payload(
         "rds_instances": rds_instances,
         "ec2_instances": ec2_instances,
         "security_groups": security_groups,
+        # fact 단 전용: 수집에 성공한 SG ID 집합.
+        # 이 키가 None이 아닌 경우, rds/ec2의 sg_id가 이 set에 없으면
+        # 해당 SG는 수집 실패(deleted/not-found)이므로 fact를 생성하지 않는다.
+        "collected_sg_ids": list(sorted(collected_sg_ids)) if collected_sg_ids is not None else None,
     }
