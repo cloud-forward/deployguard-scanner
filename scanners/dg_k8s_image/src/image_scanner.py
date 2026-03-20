@@ -63,6 +63,30 @@ PUBLIC_REGISTRIES: frozenset = frozenset({
 })
 
 # ---------------------------------------------------------------------------
+# Trivy DB 경로 — initContainer가 채우는 경로와 일치해야 한다
+# ---------------------------------------------------------------------------
+_TRIVY_DB_PATHS = [
+    os.path.expanduser("~/.cache/trivy/db/trivy.db"),
+    "/root/.cache/trivy/db/trivy.db",
+    "/home/scanner/.cache/trivy/db/trivy.db",
+]
+
+
+def _trivy_db_exists() -> bool:
+    """
+    Trivy vulnerability DB 파일이 실제로 존재하는지 확인.
+
+    [FIX] --skip-db-update는 DB가 이미 존재할 때만 사용할 수 있다.
+    첫 실행(DB 없음)에서 이 플래그를 붙이면
+    'cannot be specified on the first run' 오류가 발생한다.
+
+    initContainer(trivy-db-init)가 /root/.cache/trivy에 DB를 미리 채우면
+    이 함수는 True를 반환하고 --skip-db-update가 활성화된다.
+    """
+    return any(os.path.exists(p) for p in _TRIVY_DB_PATHS)
+
+
+# ---------------------------------------------------------------------------
 # 기본(default) 구조체 팩토리
 # ---------------------------------------------------------------------------
 
@@ -134,6 +158,13 @@ class ImageScanner:
         self.trivy_version = self._get_trivy_version() if self.trivy_available else None
         self.cosign_available = self._check_tool("cosign")
         self.docker_available = self._check_tool("docker")
+
+        # [FIX] 스캐너 시작 시점에 DB 존재 여부를 한 번 확인하고 캐시
+        # 매 이미지 스캔마다 stat() 호출을 피하기 위해 인스턴스 변수로 저장
+        self._trivy_db_ready = _trivy_db_exists()
+        if self.trivy_available:
+            db_status = "ready" if self._trivy_db_ready else "not found (will download on first scan)"
+            print(f"[*] Trivy DB: {db_status}")
 
         # EPSS 캐시
         self._epss_cache: Dict[str, Dict[str, Optional[float]]] = {}
@@ -241,6 +272,7 @@ class ImageScanner:
         print(f"Cluster: {self.config.cluster_id}")
         print(f"Mode: {trigger_mode}")
         print(f"Trivy: {'available' if self.trivy_available else 'not available'}")
+        print(f"Trivy DB: {'ready' if self._trivy_db_ready else 'will download'}")
         print(f"Cosign: {'available' if self.cosign_available else 'not available'}")
         print(f"EPSS: {'enabled' if self.config.epss_enabled else 'disabled'}")
         print(f"{'='*60}\n")
@@ -585,6 +617,14 @@ class ImageScanner:
         """
         Trivy JSON 스캔 실행.
 
+        [FIX] --skip-db-update는 DB 파일이 실제로 존재하는 경우에만 추가한다.
+        DB가 없는 상태(첫 실행 또는 emptyDir 초기화 직후)에서 이 플래그를
+        사용하면 Trivy가 FATAL 오류를 반환한다.
+
+        DB 존재 여부: self._trivy_db_ready (인스턴스 생성 시 _trivy_db_exists()로 결정)
+        config.trivy_skip_db_update: 운영자 의도 플래그 (True = skip 원함)
+        최종 적용: config.trivy_skip_db_update AND self._trivy_db_ready
+
         Returns:
           (vulnerabilities, digest, metadata_from_trivy)
 
@@ -592,12 +632,6 @@ class ImageScanner:
           RuntimeError          — trivy 프로세스 실패 / 출력 파일 미생성 /
                                   빈 파일 / JSON 파싱 오류
           subprocess.TimeoutExpired — 타임아웃 (호출부에서 별도 처리)
-
-        completed 허용 조건:
-          - returncode == 0
-          - output file 생성 + 비어있지 않음
-          - JSON 정상 파싱
-          - vulnerabilities == [] 도 정상 completed
         """
         output_file = None
         try:
@@ -611,9 +645,18 @@ class ImageScanner:
                 "--severity", self.config.trivy_severity,
                 "--timeout", self.config.trivy_timeout,
                 "--quiet",
-                "--skip-db-update",
-                image_ref,
             ]
+
+            # [FIX] --skip-db-update: 설정 플래그 AND DB 파일 실제 존재 시에만 추가
+            # config.trivy_skip_db_update=True여도 DB가 없으면 붙이지 않는다
+            use_skip_db_update = self.config.trivy_skip_db_update and self._trivy_db_ready
+            if use_skip_db_update:
+                cmd.append("--skip-db-update")
+            else:
+                print(f"    [*] Trivy DB not found or skip disabled — will download DB for: {image_ref[:50]}")
+
+            cmd.append(image_ref)
+
             proc = subprocess.run(
                 cmd,
                 capture_output=True, text=True,
@@ -704,11 +747,9 @@ class ImageScanner:
 
     def _extract_trivy_digest(self, raw: Dict[str, Any]) -> Optional[str]:
         """Trivy JSON から image digest 추출 시도."""
-        # Trivy는 Metadata.ImageID 또는 Metadata.RepoDigests 에 digest를 담기도 함
         meta = raw.get("Metadata", {})
         repo_digests = meta.get("RepoDigests", [])
         if repo_digests:
-            # "nginx@sha256:abc..." 형태에서 sha256 부분 추출
             first = repo_digests[0]
             if "@" in first:
                 return first.split("@", 1)[1]
@@ -728,7 +769,6 @@ class ImageScanner:
         image_age_days: Optional[int] = None
         if created_at_raw:
             try:
-                # ISO8601 파싱 (Python 3.11+: fromisoformat handles Z)
                 created_dt = datetime.fromisoformat(
                     created_at_raw.replace("Z", "+00:00")
                 )
@@ -738,11 +778,9 @@ class ImageScanner:
             except Exception:
                 pass
 
-        # layers 수
         diff_ids = image_config.get("rootfs", {}).get("diff_ids", [])
         total_layers = len(diff_ids) if diff_ids else None
 
-        # size (bytes → MB)
         size_bytes = meta.get("Size")
         image_size_mb: Optional[float] = None
         if size_bytes:
@@ -751,12 +789,10 @@ class ImageScanner:
             except Exception:
                 pass
 
-        # healthcheck
         has_healthcheck: Optional[bool] = None
         if "Healthcheck" in config_section or "healthcheck" in config_section:
             has_healthcheck = True
         elif config_section:
-            # config 섹션이 있는데 healthcheck 키가 없으면 false
             has_healthcheck = False
 
         return {
@@ -776,9 +812,8 @@ class ImageScanner:
         Trivy metadata + docker inspect(fallback) 병합.
         항상 _default_metadata() shape 보장.
         """
-        result = dict(trivy_meta)  # trivy 결과 우선
+        result = dict(trivy_meta)
 
-        # 부족한 필드만 docker inspect로 보완
         needs_inspect = any(result.get(k) is None for k in (
             "os", "architecture", "has_healthcheck",
             "created_at", "total_layers", "image_size_mb",
@@ -789,7 +824,6 @@ class ImageScanner:
                 if result.get(k) is None and v is not None:
                     result[k] = v
 
-        # image_age_days 재계산 (created_at이 있는데 age가 null인 경우)
         if result.get("created_at") and result.get("image_age_days") is None:
             try:
                 created_dt = datetime.fromisoformat(
@@ -801,7 +835,6 @@ class ImageScanner:
             except Exception:
                 pass
 
-        # schema completeness: 모든 key 보장
         default = _default_metadata()
         for k in default:
             if k not in result:
@@ -829,7 +862,6 @@ class ImageScanner:
                 return result
 
             data = json.loads(proc.stdout.strip())
-            # docker inspect는 배열을 반환
             if isinstance(data, list):
                 data = data[0] if data else {}
 
@@ -850,7 +882,6 @@ class ImageScanner:
                 except Exception:
                     pass
 
-            # size
             size_bytes = data.get("Size")
             image_size_mb: Optional[float] = None
             if size_bytes:
@@ -879,9 +910,6 @@ class ImageScanner:
     def _collect_signature(self, image_ref: str) -> Dict[str, Any]:
         """
         cosign으로 서명 확인.
-        - 서명 있음: {"signed": True, "signer": "...", "signature_type": "cosign"}
-        - 서명 없음 / 확인 불가: {"signed": False, "signer": null, "signature_type": null}
-        - 도구 미설치: signed=False (수집 불가와 unsigned를 구분하려면 scan_note 참고)
         항상 3개 키 보장.
         """
         if not self.cosign_available:
@@ -895,10 +923,8 @@ class ImageScanner:
                 capture_output=True, text=True, timeout=30,
             )
             if result.returncode == 0:
-                # 검증 성공 — 서명자 파싱 시도
                 signer: Optional[str] = None
                 try:
-                    # cosign verify 성공 시 stdout에 JSON 배열
                     sig_data = json.loads(result.stdout.strip())
                     if isinstance(sig_data, list) and sig_data:
                         cert = sig_data[0].get("optional", {})
@@ -997,7 +1023,6 @@ class ImageScanner:
         clean_images = [self._clean_image_item(img) for img in images]
 
         payload: Dict[str, Any] = {
-            # canonical top-level
             "scan_id": scan_id,
             "cluster_id": self.config.cluster_id,
             "scanned_at": self.scan_time,
@@ -1006,16 +1031,12 @@ class ImageScanner:
             ),
             "total_images": len(clean_images),
             "images": clean_images,
-            # optional run summary (downstream은 이 값에 의존하지 않아야 한다)
             "run_summary": self._generate_run_summary(images),
         }
         return payload
 
     def _clean_image_item(self, img: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        internal _* 키 제거, canonical output shape 강제.
-        모든 canonical 필드 존재 보장.
-        """
+        """internal _* 키 제거, canonical output shape 강제."""
         return {
             "image_ref": img.get("image_ref", ""),
             "image_digest": img.get("image_digest") or "",
@@ -1032,10 +1053,7 @@ class ImageScanner:
         }
 
     def _generate_run_summary(self, images: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """
-        스캔 실행 accounting 요약.
-        ranking / risk / top_vulnerable_images 없음 — 그건 downstream 역할.
-        """
+        """스캔 실행 accounting 요약."""
         status_counts: Dict[str, int] = {}
         for img in images:
             s = img.get("scan_status", "unknown")

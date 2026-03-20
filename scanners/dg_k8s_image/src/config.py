@@ -23,7 +23,7 @@ def _get_csv_list(name: str, default: Optional[List[str]] = None) -> List[str]:
 class ScannerConfig:
     """
     K8s + Image Scanner 설정
-    
+
     Fact Extractor와 호환되는 데이터 구조를 생성하기 위한 설정
     """
 
@@ -52,6 +52,12 @@ class ScannerConfig:
     trivy_severity: str = "CRITICAL,HIGH,MEDIUM,LOW"
     trivy_timeout: str = "5m"
     max_images_per_scan: int = 100
+
+    # [FIX] --skip-db-update 제어 플래그
+    # True(기본): initContainer 등으로 DB가 이미 존재할 때 사용
+    # False: DB가 없거나 항상 최신 DB를 사용해야 할 때 (첫 실행 포함)
+    # 실제 적용은 image_scanner._run_trivy_scan에서 DB 파일 존재 여부와 AND 조건
+    trivy_skip_db_update: bool = True
 
     # EPSS 설정
     epss_enabled: bool = True
@@ -111,6 +117,8 @@ class ScannerConfig:
             trivy_severity=os.getenv("DG_TRIVY_SEVERITY", "CRITICAL,HIGH,MEDIUM,LOW"),
             trivy_timeout=os.getenv("DG_TRIVY_TIMEOUT", "5m"),
             max_images_per_scan=int(os.getenv("DG_MAX_IMAGES_PER_SCAN", "100")),
+            # [FIX] DB 존재 여부와 별개로 이 플래그로 skip-db-update 의도를 명시
+            trivy_skip_db_update=_get_bool("DG_TRIVY_SKIP_DB_UPDATE", True),
             epss_enabled=_get_bool("DG_EPSS_ENABLED", True),
             epss_cache_hours=int(os.getenv("DG_EPSS_CACHE_HOURS", "24")),
             http_timeout_seconds=int(os.getenv("DG_HTTP_TIMEOUT_SECONDS", "30")),

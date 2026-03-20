@@ -28,6 +28,28 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      # [FIX] initContainer가 trivy-cache volume에 DB를 다운로드한 뒤
+      # 메인 컨테이너가 동일 volume을 마운트하여 --skip-db-update 사용 가능
+      initContainers:
+        - name: trivy-db-init
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - trivy
+            - image
+            - --download-db-only
+            - --cache-dir
+            - /root/.cache/trivy
+          volumeMounts:
+            - name: trivy-cache
+              mountPath: /root/.cache/trivy
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
       containers:
         - name: scanner
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -54,6 +76,9 @@ spec:
                   key: {{ .Values.api.existingSecretKey | quote }}
             - name: DG_SCANNER_TYPE
               value: "image"
+            # [FIX] initContainer가 DB를 채운 뒤이므로 skip-db-update 활성화
+            - name: DG_TRIVY_SKIP_DB_UPDATE
+              value: "true"
           envFrom:
             - configMapRef:
                 name: {{ include "deployguard-scanner.fullname" . }}-config
