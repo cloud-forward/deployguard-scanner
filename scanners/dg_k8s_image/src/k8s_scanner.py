@@ -6,7 +6,7 @@ DeployGuard K8s Scanner - Strict Canonical Raw Output Producer
     "scan_id", "cluster_id", "cluster_type", "scanned_at",
     "namespaces", "pods", "service_accounts", "roles", "cluster_roles",
     "role_bindings", "cluster_role_bindings", "secrets", "services",
-    "ingresses", "network_policies"
+    "ingresses", "network_policies", "run_summary"
   }
 
 불변 원칙:
@@ -17,7 +17,26 @@ DeployGuard K8s Scanner - Strict Canonical Raw Output Producer
   - automount_service_account_token은 최종 boolean semantics
   - env_from_configmaps.env_vars는 실제 key 목록으로 채움
   - env_from_secrets.env_vars는 envFrom 경로에서도 secret key 목록으로 채움
-  - used_by_service_accounts는 sa.secrets + image_pull_secrets 둘 다 반영
+  - used_by_service_accounts는 Pod→SA 역방향 추적으로 채움 (K8s 1.24+ 대응)
+    sa.secrets가 비어있어도 Pod의 env/volume Secret 참조를 통해 SA까지 역추적
+
+[FIX v3.2]
+  1. used_by_service_accounts 항상 빈 배열 문제
+     - K8s 1.24+에서 sa.secrets 자동 생성 중단으로 기존 SA→Secret 직접 링크 소멸
+     - _parse_container()에 sa_name 파라미터 추가
+     - envFrom / env.valueFrom / volume.secret 경로에서 _track_secret_sa() 호출
+     - _parse_volumes()에도 sa_name 전달하여 volume secret → SA 역추적
+
+  2. Service 외부 노출 판정 보완
+     - lb_provisioned (bool): LB IP 실제 할당 여부 (pending 구분)
+     - has_node_port (bool): NodePort 존재 여부
+     - 두 필드 추가로 downstream Analysis Engine의 외부 노출 판단 신호 보강
+
+  3. run_summary payload 포함 및 security_indicators 추가
+     - _build_payload()에 run_summary 블록 추가
+     - resource_counts: 11개 canonical 배열 각각의 len()
+     - security_indicators: privileged/host_pid/host_network/host_ipc/automount 집계
+     - downstream이 매번 전체 배열 재순회하지 않아도 되도록 사전 집계 제공
 """
 from __future__ import annotations
 
@@ -76,7 +95,6 @@ def _normalize_cluster_type(raw: str) -> str:
         return "eks"
     if lower == "unknown":
         return "unknown"
-    # 명시적으로 알려진 타입이거나 그 외 모두 → self-managed
     return "self-managed"
 
 
@@ -253,26 +271,25 @@ class K8sScanner:
     def _collect_all_resources(self) -> Dict[str, List[Any]]:
         """
         수집 순서:
-          1. secrets_for_cache  — _secret_key_cache 구축 (pod env_from_secrets envFrom 보강)
-          2. configmaps         — _cm_key_cache 구축 (pod env_vars 보강에 필요)
-          3. service_accounts   — _sa_automount_cache 구축 (pod effective automount에 필요)
-          4. pods               — 위 세 cache 모두 참조
-          5. secrets            — used_by_pods / used_by_service_accounts 최종 반영
+          1. _build_secret_key_cache — secret key cache 선수 구축
+          2. configmaps              — cm_key_cache 구축
+          3. service_accounts        — sa_automount_cache 구축
+          4. pods                    — 위 세 cache 참조 + Secret→SA 역추적
+          5. secrets                 — used_by_pods / used_by_service_accounts 최종 반영
           그 외 순서 무관
         """
         print("[*] Collecting K8s resources...")
         resources: Dict[str, List[Any]] = {}
 
-        # ── Step 0: secret key cache 선수 구축 (pods 수집 전) ─────────
-        # canonical payload에 포함되지 않는 내부 전처리 단계
+        # Step 0: secret key cache 선수 구축 (pods 수집 전)
         self._build_secret_key_cache()
 
-        # ── 순서 의존 수집 ─────────────────────────────────────────
+        # 순서 의존 수집
         for name, collector in [
-            ("configmaps",       self._collect_configmaps),       # cm_key_cache
-            ("service_accounts", self._collect_service_accounts), # sa_automount_cache
-            ("pods",             self._collect_pods),             # 세 cache 참조
-            ("secrets",          self._collect_secrets),          # linkage 최종 반영
+            ("configmaps",       self._collect_configmaps),
+            ("service_accounts", self._collect_service_accounts),
+            ("pods",             self._collect_pods),
+            ("secrets",          self._collect_secrets),
         ]:
             try:
                 items = collector()
@@ -282,7 +299,7 @@ class K8sScanner:
                 print(f"    ✗ {name}: ERROR - {e}")
                 resources[name] = []
 
-        # ── 순서 무관 수집 ─────────────────────────────────────────
+        # 순서 무관 수집
         order_free = [
             ("namespaces",            self._collect_namespaces),
             ("roles",                 self._collect_roles),
@@ -307,10 +324,7 @@ class K8sScanner:
     def _build_secret_key_cache(self) -> None:
         """
         Secret key 목록을 사전 수집하여 _secret_key_cache 구축.
-
-        이 cache는 envFrom.secretRef 경로에서 env_from_secrets.env_vars를
-        실제 key 목록으로 채우기 위해 필요하다.
-
+        envFrom.secretRef 경로에서 env_from_secrets.env_vars를 실제 key 목록으로 채우기 위해 필요.
         Secret value는 수집하지 않는다 — key 이름만.
         """
         try:
@@ -333,7 +347,6 @@ class K8sScanner:
         items = []
         for ns in self.core_v1.list_namespace().items:
             name = ns.metadata.name
-            # kube-public은 payload에도 포함하지 않는다
             if name in _EXCLUDED_NAMESPACES:
                 continue
             items.append({
@@ -345,13 +358,13 @@ class K8sScanner:
         return items
 
     # ══════════════════════════════════════════════════════════════════
-    # ConfigMap  (cm_key_cache 구축 — pods 수집 전 반드시 먼저)
+    # ConfigMap (cm_key_cache 구축 — pods 수집 전 반드시 먼저)
     # ══════════════════════════════════════════════════════════════════
 
     def _collect_configmaps(self) -> List[Dict[str, Any]]:
         """
         역할 두 가지:
-          1. cm_key_cache[namespace][name] = sorted([key, ...])  구축
+          1. cm_key_cache[namespace][name] = sorted([key, ...]) 구축
           2. canonical configmap 목록 반환 (내부 디버그용 — canonical payload에 포함 안 됨)
         """
         items = []
@@ -360,7 +373,7 @@ class K8sScanner:
             name = cm.metadata.name
             keys = sorted((cm.data or {}).keys())
 
-            # cache 구축 (필터 없이 전체 — pod가 어떤 namespace의 cm도 참조할 수 있음)
+            # 필터 없이 전체 cache 구축 (pod가 어떤 namespace의 cm도 참조할 수 있음)
             self._cm_key_cache.setdefault(namespace, {})[name] = keys
 
             if not self._should_scan_namespace(namespace):
@@ -389,26 +402,26 @@ class K8sScanner:
                 continue
 
             name = pod.metadata.name
+            sa_name = pod.spec.service_account_name or "default"
 
             # volumes map (volume_mounts source 매핑용)
-            volumes, volumes_map = self._parse_volumes(pod, namespace, name)
+            # [FIX 1] sa_name 전달 → volume secret → SA 역추적 가능
+            volumes, volumes_map = self._parse_volumes(pod, namespace, name, sa_name)
 
             # SA automount effective boolean
-            sa_name = pod.spec.service_account_name or "default"
             pod_automount = pod.spec.automount_service_account_token
             effective_automount = self._resolve_automount(pod_automount, namespace, sa_name)
 
-            # containers
+            # [FIX 1] sa_name 전달 → env Secret → SA 역추적 가능
             containers = [
-                self._parse_container(c, volumes_map, namespace, name)
+                self._parse_container(c, volumes_map, namespace, name, sa_name=sa_name)
                 for c in (pod.spec.containers or [])
             ]
             init_containers = [
-                self._parse_container(c, volumes_map, namespace, name, is_init=True)
+                self._parse_container(c, volumes_map, namespace, name, is_init=True, sa_name=sa_name)
                 for c in (pod.spec.init_containers or [])
             ]
 
-            # owner (명세에 없으나 유용한 raw metadata — 해석 필드 아님)
             owner_kind, owner_name = None, None
             for owner in (pod.metadata.owner_references or []):
                 if owner.controller:
@@ -461,6 +474,7 @@ class K8sScanner:
         pod,
         namespace: str,
         pod_name: str,
+        sa_name: str = "default",  # [FIX 1] SA 역추적을 위해 추가
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, Any]]]:
         volumes = []
         volumes_map: Dict[str, Dict[str, Any]] = {}
@@ -478,6 +492,8 @@ class K8sScanner:
                 info["type"] = "secret"
                 info["secret_name"] = v.secret.secret_name
                 self._track_secret_pod(namespace, v.secret.secret_name, pod_name)
+                # [FIX 1] volume으로 마운트된 Secret도 SA와 연결
+                self._track_secret_sa(namespace, v.secret.secret_name, sa_name)
             elif v.config_map:
                 info["type"] = "configmap"
                 info["configmap_name"] = v.config_map.name
@@ -504,6 +520,7 @@ class K8sScanner:
         namespace: str,
         pod_name: str,
         is_init: bool = False,
+        sa_name: str = "default",  # [FIX 1] SA 역추적을 위해 추가
     ) -> Dict[str, Any]:
         sc = container.security_context
         security_context = _default_security_context()
@@ -542,15 +559,13 @@ class K8sScanner:
             })
 
         # env_from_secrets / env_from_configmaps
-        env_from_secrets: Dict[str, List[str]] = {}   # secret_name → [env_var, ...]
-        env_from_configmaps: Dict[str, List[str]] = {}  # cm_name → [key, ...]
+        env_from_secrets: Dict[str, List[str]] = {}
+        env_from_configmaps: Dict[str, List[str]] = {}
 
         # envFrom (bulk ref)
         for ef in (container.env_from or []):
             if ef.secret_ref and ef.secret_ref.name:
                 sname = ef.secret_ref.name
-                # [FIX] envFrom.secretRef 경로: secret_key_cache에서 실제 key 목록 채움
-                # 명세 §4 env_from_secrets: "Secret의 모든 key"를 env_vars에 넣어야 한다
                 keys = self._secret_key_cache.get(namespace, {}).get(sname, [])
                 if sname not in env_from_secrets:
                     env_from_secrets[sname] = []
@@ -560,6 +575,8 @@ class K8sScanner:
                         env_from_secrets[sname].append(k)
                         existing.add(k)
                 self._track_secret_pod(namespace, sname, pod_name)
+                # [FIX 1] envFrom Secret → SA 역추적
+                self._track_secret_sa(namespace, sname, sa_name)
 
             if ef.config_map_ref and ef.config_map_ref.name:
                 cmname = ef.config_map_ref.name
@@ -584,6 +601,8 @@ class K8sScanner:
                 if env.name not in env_from_secrets[sname]:
                     env_from_secrets[sname].append(env.name)
                 self._track_secret_pod(namespace, sname, pod_name)
+                # [FIX 1] 개별 env.valueFrom Secret → SA 역추적
+                self._track_secret_sa(namespace, sname, sa_name)
 
             if env.value_from.config_map_key_ref and env.value_from.config_map_key_ref.name:
                 cmname = env.value_from.config_map_key_ref.name
@@ -649,10 +668,12 @@ class K8sScanner:
             labels = sa.metadata.labels or {}
             annotations = sa.metadata.annotations or {}
 
-            # IRSA raw normalization — 해석이 아니라 annotation shortcut
             irsa_role_arn: Optional[str] = annotations.get("eks.amazonaws.com/role-arn") or None
 
             # sa.secrets + image_pull_secrets → Secret 역매핑 구축
+            # K8s 1.24+ 환경에서는 sa.secrets가 비어 있는 것이 정상이다.
+            # 실제 Secret 사용 연결은 Pod 수집 시 _parse_container/_parse_volumes에서
+            # _track_secret_sa()를 통해 역방향으로 채워진다.
             sa_secrets: List[str] = sorted([s.name for s in (sa.secrets or []) if s.name])
             ips_secrets: List[str] = sorted([
                 s.name for s in (sa.image_pull_secrets or []) if s.name
@@ -661,7 +682,6 @@ class K8sScanner:
             for sname in all_secrets:
                 self._track_secret_sa(namespace, sname, name)
 
-            # automount: null → True (K8s 기본), cache에 저장
             raw_automount = sa.automount_service_account_token
             automount = bool(raw_automount) if raw_automount is not None else True
             self._sa_automount_cache.setdefault(namespace, {})[name] = automount
@@ -690,6 +710,10 @@ class K8sScanner:
 
         value는 절대 수집 금지.
         해석 플래그(has_sensitive_keys, is_unused, is_tls ...) 없음.
+
+        [FIX 1] used_by_service_accounts는 이 시점에 _secret_used_by_sa에
+        Pod 수집(_parse_container/_parse_volumes)에서 역추적된 SA 목록이
+        채워져 있으므로 K8s 1.24+ 환경에서도 올바르게 반영된다.
         """
         items = []
         for secret in self.core_v1.list_secret_for_all_namespaces().items:
@@ -698,7 +722,6 @@ class K8sScanner:
                 continue
 
             secret_type = secret.type or "Opaque"
-            # 명세 §16: SA 토큰 제외
             if secret_type == "kubernetes.io/service-account-token":
                 continue
 
@@ -818,8 +841,13 @@ class K8sScanner:
           - 문자열 target_port → target_port=null, target_port_name=string
         판단 필드(is_external, is_loadbalancer 등) 없음.
 
-        [FIX] 필드명: 명세는 external_ip (단수) 사용.
-        호환성을 위해 external_ips (배열) 유지하되 external_ip (첫 번째 값) 도 함께 제공.
+        [FIX 2] 외부 노출 판정 보조 필드 추가:
+          lb_provisioned (bool): LB ingress가 실제 할당됐는지 여부
+            - True  → LB IP/hostname 할당 완료
+            - False → LoadBalancer 타입이지만 아직 pending이거나 다른 타입
+          has_node_port (bool): NodePort가 하나라도 존재하는지 여부
+            - True  → 노드 IP:NodePort로 외부 접근 가능 경로 존재
+          두 필드 모두 raw 사실만 기록 — 판단은 Analysis Engine이 수행한다.
         """
         items = []
         for svc in self.core_v1.list_service_for_all_namespaces().items:
@@ -859,6 +887,10 @@ class K8sScanner:
 
             raw_external_ips: List[str] = sorted(svc.spec.external_i_ps or [])
 
+            # [FIX 2] 외부 노출 판정 보조 필드
+            lb_provisioned: bool = bool(lb_ingress)
+            has_node_port: bool = any(p["node_port"] is not None for p in ports)
+
             items.append({
                 "namespace": namespace,
                 "name": svc.metadata.name,
@@ -866,11 +898,13 @@ class K8sScanner:
                 "annotations": svc.metadata.annotations or {},
                 "type": svc.spec.type,
                 "cluster_ip": svc.spec.cluster_ip,
-                # [FIX] 명세 §11 필드명은 external_ip (단수). 배열은 external_ips로 별도 제공.
                 "external_ip": raw_external_ips[0] if raw_external_ips else None,
                 "external_ips": raw_external_ips,
                 "load_balancer_ip": svc.spec.load_balancer_ip,
                 "load_balancer_ingress": lb_ingress,
+                # [FIX 2] 추가 필드
+                "lb_provisioned": lb_provisioned,
+                "has_node_port": has_node_port,
                 "selector": svc.spec.selector or {},
                 "ports": ports,
             })
@@ -977,14 +1011,12 @@ class K8sScanner:
     ) -> Dict[str, Any]:
         """
         Strict canonical payload.
-        오직 아래 키만 포함한다:
-          scan_id, cluster_id, cluster_type, scanned_at,
-          namespaces, pods, service_accounts, roles, cluster_roles,
-          role_bindings, cluster_role_bindings, secrets,
-          services, ingresses, network_policies
 
-        summary / _extensions / debug 필드 일절 없음.
-        configmaps는 canonical contract에 없으므로 포함하지 않는다.
+        [FIX 3] run_summary 블록 추가:
+          - resource_counts: 11개 canonical 배열 각각의 len()
+          - security_indicators: Pod 레벨 보안 설정 집계값
+          downstream이 이 값에 의존해 배열 재순회를 줄일 수 있다.
+          단, 이 값은 참고용이며 canonical 배열이 항상 source of truth다.
         """
         return {
             "scan_id": scan_id,
@@ -1003,6 +1035,90 @@ class K8sScanner:
             "services":              resources.get("services", []),
             "ingresses":             resources.get("ingresses", []),
             "network_policies":      resources.get("network_policies", []),
+            # [FIX 3] run_summary 추가
+            "run_summary": self._generate_run_summary(resources),
+        }
+
+    def _generate_run_summary(self, resources: Dict[str, List[Any]]) -> Dict[str, Any]:
+        """
+        [FIX 3] 스캔 결과 요약 집계.
+
+        resource_counts:
+          canonical 11개 배열 각각의 항목 수.
+
+        security_indicators:
+          Pod / Container 레벨 보안 설정의 집계값.
+          판단(risk score, severity)은 포함하지 않는다 — raw count만.
+
+          - privileged_containers     : privileged=true 컨테이너 수
+          - host_pid_pods             : hostPID=true Pod 수
+          - host_network_pods         : hostNetwork=true Pod 수
+          - host_ipc_pods             : hostIPC=true Pod 수
+          - automount_enabled_pods    : automountServiceAccountToken=true Pod 수
+          - allow_privilege_esc_containers : allowPrivilegeEscalation=true 컨테이너 수
+          - no_read_only_root_pods    : 모든 컨테이너가 readOnlyRootFilesystem=false인 Pod 수
+          - run_as_root_containers    : runAsUser=0 또는 runAsNonRoot=false 컨테이너 수
+        """
+        _CANONICAL_ARRAYS = [
+            "namespaces", "pods", "service_accounts", "roles", "cluster_roles",
+            "role_bindings", "cluster_role_bindings", "secrets",
+            "services", "ingresses", "network_policies",
+        ]
+        resource_counts = {k: len(resources.get(k, [])) for k in _CANONICAL_ARRAYS}
+
+        pods = resources.get("pods", [])
+
+        privileged_containers = 0
+        host_pid_pods = 0
+        host_network_pods = 0
+        host_ipc_pods = 0
+        automount_enabled_pods = 0
+        allow_privilege_esc_containers = 0
+        no_read_only_root_pods = 0
+        run_as_root_containers = 0
+
+        for pod in pods:
+            if pod.get("host_pid"):
+                host_pid_pods += 1
+            if pod.get("host_network"):
+                host_network_pods += 1
+            if pod.get("host_ipc"):
+                host_ipc_pods += 1
+            if pod.get("automount_service_account_token"):
+                automount_enabled_pods += 1
+
+            all_containers = pod.get("containers", []) + pod.get("init_containers", [])
+            pod_has_writable_root = False
+
+            for c in all_containers:
+                sc = c.get("security_context", {})
+                if sc.get("privileged"):
+                    privileged_containers += 1
+                if sc.get("allow_privilege_escalation"):
+                    allow_privilege_esc_containers += 1
+                if not sc.get("read_only_root_filesystem"):
+                    pod_has_writable_root = True
+                # runAsUser=0 이거나 runAsNonRoot=false (K8s 기본)이면 root 실행 가능
+                run_as_user = sc.get("run_as_user")
+                run_as_non_root = sc.get("run_as_non_root", False)
+                if run_as_user == 0 or not run_as_non_root:
+                    run_as_root_containers += 1
+
+            if pod_has_writable_root:
+                no_read_only_root_pods += 1
+
+        return {
+            "resource_counts": resource_counts,
+            "security_indicators": {
+                "privileged_containers": privileged_containers,
+                "host_pid_pods": host_pid_pods,
+                "host_network_pods": host_network_pods,
+                "host_ipc_pods": host_ipc_pods,
+                "automount_enabled_pods": automount_enabled_pods,
+                "allow_privilege_esc_containers": allow_privilege_esc_containers,
+                "no_read_only_root_pods": no_read_only_root_pods,
+                "run_as_root_containers": run_as_root_containers,
+            },
         }
 
     # ══════════════════════════════════════════════════════════════════
