@@ -11,12 +11,10 @@ from .auth import create_boto3_session, validate_credentials
 from .config import ScannerConfig
 from .collectors import (
     EC2Collector,
-    EKSCollector,
     IAMCollector,
     RDSCollector,
     S3Collector,
     SecurityGroupCollector,
-    VPCCollector,
     build_aws_payload,
 )
 from shared.orchestrator import ScanOrchestrator
@@ -39,27 +37,53 @@ class CloudScanner:
         self.api_client = DeployGuardApiClient(config)
 
     def run_worker_scan(self, scan_id: str, trigger_mode: str = "scheduled") -> Dict[str, Any]:
-        # poll_scan에서 이미 claim됐으므로 bind만 하고 바로 실행
         self.api_client.bind_scan(scan_id, self.config.scanner_type)
         return self._execute_scan(scan_id=scan_id, trigger_mode=trigger_mode)
 
     def _execute_scan(self, scan_id: str, trigger_mode: str) -> Dict[str, Any]:
         orchestrator = ScanOrchestrator(self.config, self.api_client)
+
+        # --- Phase 1: collect ---
         try:
             aws_account_id = self._resolve_account_id()
             payload = self._collect_all_resources(
                 scan_id=scan_id,
                 aws_account_id=aws_account_id,
-                trigger_mode=trigger_mode,
             )
+        except KeyboardInterrupt:
+            logger.warning("AWS scan interrupted during collect", extra={"scan_id": scan_id})
+            raise
+        except Exception as exc:
+            logger.exception("AWS scan failed during collect", extra={"scan_id": scan_id})
+            orchestrator.handle_failure(exc, phase="collect", detail={"scan_id": scan_id})
+            raise
 
+        # --- Phase 2: upload ---
+        try:
             local_output_file: Optional[str] = None
             if self.config.save_local_copy:
                 local_output_file = self.save_json(payload)
 
             uploaded_files = [orchestrator.upload_result(payload, self.config.upload_file_name)]
+        except KeyboardInterrupt:
+            logger.warning("AWS scan interrupted during upload", extra={"scan_id": scan_id})
+            raise
+        except Exception as exc:
+            logger.exception("AWS scan failed during upload", extra={"scan_id": scan_id})
+            orchestrator.handle_failure(exc, phase="upload", detail={"scan_id": scan_id})
+            raise
 
-            resource_counts = payload.get("resource_counts", {})
+        # --- Phase 3: complete ---
+        try:
+            # 운영 메타는 complete_scan meta에만 전달 — payload에 섞지 않는다
+            resource_counts = {
+                "iam_roles": len(payload["iam_roles"]),
+                "iam_users": len(payload["iam_users"]),
+                "s3_buckets": len(payload["s3_buckets"]),
+                "rds_instances": len(payload["rds_instances"]),
+                "ec2_instances": len(payload["ec2_instances"]),
+                "security_groups": len(payload["security_groups"]),
+            }
 
             complete_resp = orchestrator.complete_scan(
                 resource_counts=resource_counts,
@@ -67,32 +91,37 @@ class CloudScanner:
                     "scanner_type": self.config.scanner_type,
                     "trigger_mode": trigger_mode,
                     "scan_type": self.config.scan_type,
+                    "cluster_id": self.config.cluster_id,
                     "uploaded_file_name": self.config.upload_file_name,
                     "recommended_cron_schedule": self.config.aws_recommended_cron_schedule,
                 },
             )
-
-            return orchestrator.build_result(
-                scan_id=scan_id,
-                payload=payload,
-                complete_result=complete_resp,
-                uploaded_files=uploaded_files,
-                local_file=local_output_file,
-                extra={"resource_counts": resource_counts},
-            )
         except KeyboardInterrupt:
-            logger.warning("AWS scan interrupted", extra={"scan_id": scan_id})
+            logger.warning("AWS scan interrupted during complete", extra={"scan_id": scan_id})
             raise
-        except Exception:
-            logger.exception("AWS scan failed", extra={"scan_id": scan_id})
+        except Exception as exc:
+            logger.exception("AWS scan failed during complete", extra={"scan_id": scan_id})
+            orchestrator.handle_failure(exc, phase="complete", detail={"scan_id": scan_id})
             raise
+
+        return orchestrator.build_result(
+            scan_id=scan_id,
+            payload=payload,
+            complete_result=complete_resp,
+            uploaded_files=uploaded_files,
+            local_file=local_output_file,
+            extra={"resource_counts": resource_counts},
+        )
 
     def _collect_all_resources(
         self,
         scan_id: str,
         aws_account_id: str,
-        trigger_mode: str,
     ) -> Dict[str, Any]:
+        """
+        문서 기준 6개 리소스만 수집.
+        EKSCollector, VPCCollector는 payload 생성에 사용하지 않는다.
+        """
         iam = IAMCollector(self.session)
         s3 = S3Collector(self.session)
         rds = RDSCollector(self.session, self.config.region)
@@ -104,12 +133,6 @@ class CloudScanner:
             tag_patterns=self.config.ec2_tag_patterns,
             specified_instance_ids=self.config.ec2_specified_instance_ids,
         )
-        eks = EKSCollector(
-            self.session,
-            self.config.region,
-            cluster_names=self.config.eks_cluster_names,
-        )
-        vpc = VPCCollector(self.session, self.config.region)
         sg = SecurityGroupCollector(self.session, self.config.region)
 
         iam_roles = iam.collect_roles(
@@ -129,34 +152,20 @@ class CloudScanner:
             specified_identifiers=self.config.rds_specified_identifiers,
         )
         ec2_instances, ec2_sg_ids = ec2.collect_instances()
-        eks_data = eks.collect()
-        network = vpc.collect()
 
-        eks_sg_ids: set[str] = set()
-        for cluster in eks_data.get("clusters", []):
-            cluster_sg_id = cluster.get("cluster_security_group_id")
-            if cluster_sg_id:
-                eks_sg_ids.add(cluster_sg_id)
-            eks_sg_ids.update(cluster.get("security_group_ids", []))
-
-        security_groups = sg.collect(sorted(rds_sg_ids | ec2_sg_ids | eks_sg_ids))
+        # SG 수집 범위: RDS + EC2에서 직접 참조된 SG만 (recursive expansion 없음)
+        security_groups = sg.collect(sorted(rds_sg_ids | ec2_sg_ids))
 
         return build_aws_payload(
             scan_id=scan_id,
-            cluster_id=self.config.cluster_id,
             aws_account_id=aws_account_id,
             region=self.config.region,
-            trigger_mode=trigger_mode,
-            scan_type=self.config.scan_type,
-            recommended_schedule=self.config.aws_recommended_cron_schedule,
             iam_roles=iam_roles,
             iam_users=iam_users,
             s3_buckets=s3_buckets,
             rds_instances=rds_instances,
             ec2_instances=ec2_instances,
             security_groups=security_groups,
-            eks=eks_data,
-            network=network,
         )
 
     def save_json(self, payload: Dict[str, Any]) -> str:
