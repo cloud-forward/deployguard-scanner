@@ -1143,10 +1143,6 @@ class K8sScanner:
         if sa_name not in sa_list:
             sa_list.append(sa_name)
 
-    # ══════════════════════════════════════════════════════════════════
-    # 로컬 저장
-    # ══════════════════════════════════════════════════════════════════
-
     def _save_local_copy(self, payload: Dict[str, Any], scan_id: str) -> str:
         os.makedirs(self.config.output_dir, exist_ok=True)
         filename = self.config.output_filename or f"k8s_scan_{scan_id}.json"
