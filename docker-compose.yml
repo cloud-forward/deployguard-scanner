@@ -1,17 +1,14 @@
 services:
   aws-scanner:
-    image: 189060532132.dkr.ecr.ap-northeast-2.amazonaws.com/deployguard-aws-scanner:latest
+    image: 189060532132.dkr.ecr.ap-northeast-2.amazonaws.com/deployguard-aws-scanner
     container_name: deployguard-aws-scanner
-    restart: unless-stopped
-    command: ["worker"]
+    command: ["manual"]
     environment:
-      DG_API_ENDPOINT: ${DG_API_ENDPOINT:-https://analysis.deployguard.org}
-      API_URL: ${DG_API_ENDPOINT:-https://analysis.deployguard.org}
-      DG_SCANNER_TYPE: aws
-      DG_CLUSTER_ID: ${DG_CLUSTER_ID:?set DG_CLUSTER_ID}
-      AWS_REGION: ${AWS_REGION:?set AWS_REGION}
-      DG_API_TOKEN: ${DG_API_TOKEN:?set DG_API_TOKEN}
-    # 나중에 AssumeRole 붙일 때 필요하면 추가
-    # environment:
-    #   DG_ROLE_ARN: ${DG_ROLE_ARN:-}
-    #   DG_EXTERNAL_ID: ${DG_EXTERNAL_ID:-}
+      DG_API_ENDPOINT: "https://analysis.deployguard.org"
+      API_URL: "https://analysis.deployguard.org"
+      DG_API_TOKEN: "dg_scanner_cqdIoRombfiO6xSgMdiP2ghK2jgo2uME"
+      DG_CLUSTER_ID: "36b72d40-4443-405a-b564-14244b7dbeca"
+      DG_SCANNER_TYPE: "aws"
+      AWS_REGION: "ap-northeast-2"
+      DG_ROLE_ARN: "arn:aws:iam::244105859679:role/deployguard-scanner-role"
+      DG_SAVE_LOCAL_COPY: "false"
