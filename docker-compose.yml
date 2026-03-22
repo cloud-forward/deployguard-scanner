@@ -3,7 +3,7 @@ services:
     image: 189060532132.dkr.ecr.ap-northeast-2.amazonaws.com/deployguard-aws-scanner:latest
     container_name: deployguard-aws-scanner
     restart: unless-stopped
-    command: ["scheduled"]
+    command: ["worker"]
     environment:
       DG_API_ENDPOINT: ${DG_API_ENDPOINT:-https://analysis.deployguard.org}
       API_URL: ${API_URL:-https://analysis.deployguard.org}

@@ -29,4 +29,4 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app
 
 ENTRYPOINT ["python", "-m", "backend.app.scanners.cloud_scanner.main"]
-CMD ["scheduled"]
+CMD ["worker"]

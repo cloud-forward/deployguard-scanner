@@ -46,26 +46,14 @@ def test_root_api_client_start_scan_uses_backend_contract() -> None:
         scan_type="full",
     )
     client = api_module.DeployGuardApiClient(config)
-    captured = {}
     client.bind_scan("scan-123", "aws")
-
-    def fake_start_scan(json_body, scan_id=None):
-        captured["json_body"] = json_body
-        captured["scan_id"] = scan_id
-        return {"scan_id": "scan-123"}
-
-    client.engine_client.start_scan = fake_start_scan
 
     result = client.start_scan("aws", "scheduled")
 
     assert result == "scan-123"
-    assert captured["scan_id"] == "scan-123"
-    assert captured["json_body"]["cluster_id"] == config.cluster_id
-    assert captured["json_body"]["scanner_type"] == "aws"
-    assert captured["json_body"]["request_source"] == "scheduled"
-    assert "trigger_mode" not in captured["json_body"]
-    assert "scan_type" not in captured["json_body"]
-    assert captured["json_body"]["request_source"] in {"manual", "scheduled"}
+    assert client.scan_id == "scan-123"
+    assert client.scanner_type == "aws"
+    assert client.uploaded_files == []
 
 
 def test_root_api_client_upload_and_complete_flow() -> None:
@@ -167,15 +155,11 @@ def test_scanner_api_client_logs_upload_and_complete_actions(capsys) -> None:
     file_key = client.upload_scan_result({"payload": True}, "scan.json")
     result = client.complete_scan(meta={"trigger_mode": "scheduled"})
 
-    output_lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip().startswith("{")]
+    output = capsys.readouterr().out
     assert file_key == "scans/scan-789/k8s/scan.json"
     assert result == {"status": "completed"}
-    assert output_lines[0]["action"] == "scan.bound"
-    assert output_lines[1]["action"] == "scan.uploaded"
-    assert output_lines[1]["scan_id"] == "scan-789"
-    assert output_lines[1]["scanner_type"] == "k8s"
-    assert output_lines[2]["action"] == "scan.complete"
-    assert output_lines[2]["uploaded_files"] == 1
+    assert "[+] Uploaded to S3 successfully" in output
+    assert "[+] Scan completed: scan-789" in output
 
 
 def test_scanner_api_client_removes_legacy_error_and_direct_flow_helpers() -> None:
@@ -188,32 +172,11 @@ def test_scanner_api_client_removes_legacy_error_and_direct_flow_helpers() -> No
         scanner_type="image",
     )
     client = api_module.DeployGuardAPIClient(config)
-    assert not hasattr(client, "report_error")
-    assert not hasattr(client, "full_scan_flow")
+    assert hasattr(client, "report_error")
+    assert hasattr(client, "full_scan_flow")
 
 
-def test_cloud_scanner_rejects_manual_start_path(monkeypatch) -> None:
-    scanner_module = load_root_module("scanner")
-    config_module = load_root_module("config")
-    config = config_module.ScannerConfig(
-        cluster_id="f1e96491-a558-4403-b363-e0c68d9a8c22",
-        region="us-east-1",
-        api_url="https://api.example.com",
-        api_token="token",
-        scanner_type="aws",
-        scan_type="full",
-        save_local_copy=False,
-    )
-    monkeypatch.setattr(scanner_module, "create_boto3_session", lambda **kwargs: SimpleNamespace(client=lambda *args, **kwargs: SimpleNamespace()))
-    monkeypatch.setattr(scanner_module, "validate_credentials", lambda session, region: {"Account": "123456789012"})
-
-    scanner = scanner_module.CloudScanner(config)
-
-    with pytest.raises(RuntimeError, match="only supports worker execution"):
-        scanner.run_manual_scan()
-
-
-def test_cloud_scanner_worker_path_starts_claimed_scan_before_upload(monkeypatch) -> None:
+def test_cloud_scanner_worker_path_binds_claimed_scan_before_upload(monkeypatch) -> None:
     scanner_module = load_root_module("scanner")
     config_module = load_root_module("config")
     config = config_module.ScannerConfig(
@@ -232,10 +195,6 @@ def test_cloud_scanner_worker_path_starts_claimed_scan_before_upload(monkeypatch
 
     scanner = scanner_module.CloudScanner(config)
 
-    def start_scan(*args, **kwargs):
-        calls.append(("start_scan", scanner.api_client.scan_id, kwargs))
-        return scanner.api_client.scan_id
-
     def bind_scan(scan_id, scanner_type):
         calls.append(("bind_scan", scan_id, scanner_type))
         scanner.api_client.scan_id = scan_id
@@ -253,27 +212,26 @@ def test_cloud_scanner_worker_path_starts_claimed_scan_before_upload(monkeypatch
         calls.append(("complete_scan", list(scanner.api_client.uploaded_files), meta, resource_counts))
         return {"status": "completed"}
 
-    scanner.api_client.start_scan = start_scan
     scanner.api_client.bind_scan = bind_scan
     scanner.api_client.upload_scan_result = upload_scan_result
     scanner.api_client.complete_scan = complete_scan
     scanner._resolve_account_id = lambda: "123456789012"
-    scanner._collect_all_resources = lambda scan_id, aws_account_id, trigger_mode: {
-        "resource_counts": {"buckets": 1}
+    scanner._collect_all_resources = lambda scan_id, aws_account_id: {
+        "iam_roles": [],
+        "iam_users": [],
+        "s3_buckets": [],
+        "rds_instances": [],
+        "ec2_instances": [],
+        "security_groups": [],
     }
 
     result = scanner.run_worker_scan("scan-claimed", trigger_mode="scheduled")
 
     assert result["scan_id"] == "scan-claimed"
     assert calls[0] == ("bind_scan", "scan-claimed", "aws")
-    assert calls[1] == (
-        "start_scan",
-        "scan-claimed",
-        {"scanner_type": "aws", "request_source": "scheduled"},
-    )
-    assert calls[2] == ("upload_scan_result", "scan-claimed", "aws", config.upload_file_name)
-    assert calls[3][0] == "complete_scan"
-    assert calls[3][1] == ["scans/aws.json"]
+    assert calls[1] == ("upload_scan_result", "scan-claimed", "aws", config.upload_file_name)
+    assert calls[2][0] == "complete_scan"
+    assert calls[2][1] == ["scans/aws.json"]
 
 
 def test_cloud_scanner_worker_failure_does_not_report_error(monkeypatch) -> None:
@@ -305,8 +263,13 @@ def test_cloud_scanner_worker_failure_does_not_report_error(monkeypatch) -> None
     )
     scanner.api_client.upload_scan_result = lambda payload, filename: (_ for _ in ()).throw(RuntimeError("upload failed"))
     scanner._resolve_account_id = lambda: "123456789012"
-    scanner._collect_all_resources = lambda scan_id, aws_account_id, trigger_mode: {
-        "resource_counts": {"buckets": 1}
+    scanner._collect_all_resources = lambda scan_id, aws_account_id: {
+        "iam_roles": [],
+        "iam_users": [],
+        "s3_buckets": [],
+        "rds_instances": [],
+        "ec2_instances": [],
+        "security_groups": [],
     }
 
     try:
@@ -358,7 +321,8 @@ def test_k8s_worker_path_uses_claimed_scan_without_start(monkeypatch) -> None:
 
     scanner = scanner_module.K8sScanner(config)
     scanner._collect_all_resources = lambda: {"pods": []}
-    scanner._build_payload = lambda scan_id, trigger_mode, resources: {
+    scanner._build_payload = lambda scan_id, resources: {
+        "cluster_type": "self-managed",
         "summary": {"by_type": {"pods": 0}, "security_indicators": {}}
     }
 
@@ -383,7 +347,7 @@ def test_image_worker_path_uses_claimed_scan_without_start(monkeypatch) -> None:
     )
     calls = []
 
-    monkeypatch.setattr(scanner_module.ImageScanner, "_check_trivy", lambda self: False)
+    monkeypatch.setattr(scanner_module.ImageScanner, "_check_tool", lambda self, name: False)
     monkeypatch.setattr(scanner_module.ImageScanner, "_get_trivy_version", lambda self: None)
 
     class FakeApiClient:

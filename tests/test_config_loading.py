@@ -88,6 +88,39 @@ def test_aws_config_accepts_api_base_url(monkeypatch: pytest.MonkeyPatch) -> Non
     assert loaded.scan_poll_path == "/api/v1/scans/pending"
 
 
+def test_aws_config_prefers_scanner_type_env_over_legacy_alias(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DG_CLUSTER_ID", "f1e96491-a558-4403-b363-e0c68d9a8c22")
+    monkeypatch.setenv("AWS_REGION", "us-west-2")
+    monkeypatch.setenv("API_URL", "https://api.example.com")
+    monkeypatch.setenv("SCANNER_TYPE", "aws")
+    monkeypatch.setenv("DG_SCANNER_TYPE", "aws")
+
+    loaded = aws_config.ScannerConfig.from_env()
+
+    assert loaded.scanner_type == "aws"
+
+
+def test_aws_config_accepts_legacy_dg_scanner_type_alias(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DG_CLUSTER_ID", "f1e96491-a558-4403-b363-e0c68d9a8c22")
+    monkeypatch.setenv("AWS_REGION", "us-west-2")
+    monkeypatch.setenv("API_URL", "https://api.example.com")
+    monkeypatch.setenv("DG_SCANNER_TYPE", "aws")
+
+    loaded = aws_config.ScannerConfig.from_env()
+
+    assert loaded.scanner_type == "aws"
+
+
+def test_aws_config_rejects_non_aws_scanner_type(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DG_CLUSTER_ID", "f1e96491-a558-4403-b363-e0c68d9a8c22")
+    monkeypatch.setenv("AWS_REGION", "us-west-2")
+    monkeypatch.setenv("API_URL", "https://api.example.com")
+    monkeypatch.setenv("SCANNER_TYPE", "image")
+
+    with pytest.raises(ValueError, match="SCANNER_TYPE must be one of: aws"):
+        aws_config.ScannerConfig.from_env()
+
+
 def test_scanner_config_prefers_dg_api_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     scanner_config = load_scanner_src_module("config")
 

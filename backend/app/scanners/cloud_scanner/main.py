@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import sys
@@ -15,6 +16,18 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+SUPPORTED_MODE = "worker"
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="DeployGuard AWS Scanner")
+    parser.add_argument(
+        "mode",
+        nargs="?",
+        default=SUPPORTED_MODE,
+        help="AWS scanner launch mode (worker only)",
+    )
+    return parser.parse_args(argv)
 
 
 def _format_result(result: dict, config: ScannerConfig) -> dict:
@@ -33,7 +46,16 @@ def _format_result(result: dict, config: ScannerConfig) -> dict:
 
 def main() -> int:
     try:
+        args = _parse_args()
+        if args.mode != SUPPORTED_MODE:
+            print(
+                f"Unsupported mode: {args.mode}. AWS scanner supports only '{SUPPORTED_MODE}'.",
+                file=sys.stderr,
+            )
+            return 1
+
         config = load_config(ScannerConfig)
+        logger.info("Mode: %s", args.mode)
         logger.info("Cluster ID: %s", config.cluster_id)
         logger.info("Region: %s", config.region)
 

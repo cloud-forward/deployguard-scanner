@@ -44,7 +44,7 @@ def test_main_scheduled_uses_resident_polling_loop(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(main_module, "CloudScanner", FakeScanner)
     monkeypatch.setattr(main_module, "load_config", lambda cls: SimpleNamespace(cluster_id="cid", region="us-east-1", aws_recommended_cron_schedule="22 */4 * * *"))
     monkeypatch.setattr(main_module, "run_polling_loop", fake_run_polling_loop)
-    monkeypatch.setattr(sys, "argv", ["main.py", "scheduled"])
+    monkeypatch.setattr(sys, "argv", ["main.py", "worker"])
 
     assert main_module.main() == 130
     output = capsys.readouterr()
@@ -52,16 +52,97 @@ def test_main_scheduled_uses_resident_polling_loop(monkeypatch: pytest.MonkeyPat
     assert loop_calls == [30]
 
 
-def test_main_manual_mode_is_rejected(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_defaults_to_worker_mode(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     main_module = load_root_module("main")
 
+    class FakeScanner:
+        def __init__(self, config) -> None:
+            self.api_client = SimpleNamespace()
+            self.calls = 0
+            self.api_client.poll_scan = self.poll_scan
+
+        def poll_scan(self):
+            self.calls += 1
+            if self.calls == 1:
+                return None
+            return {"scan_id": "scan-default", "trigger_mode": "scheduled"}
+
+        def run_worker_scan(self, scan_id: str, trigger_mode: str = "scheduled"):
+            return {
+                "scan_id": scan_id,
+                "status": "completed",
+                "uploaded_files": ["f1"],
+                "payload": {"resource_counts": {"x": 1}},
+            }
+
+    loop_calls = []
+
+    def fake_run_polling_loop(poll_once, interval_seconds=30, should_stop=None):
+        loop_calls.append(interval_seconds)
+        assert poll_once() is False
+        assert poll_once() is True
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(main_module, "CloudScanner", FakeScanner)
     monkeypatch.setattr(main_module, "load_config", lambda cls: SimpleNamespace(cluster_id="cid", region="us-east-1", aws_recommended_cron_schedule="22 */4 * * *"))
-    monkeypatch.setattr(main_module, "CloudScanner", lambda config: SimpleNamespace())
+    monkeypatch.setattr(main_module, "run_polling_loop", fake_run_polling_loop)
+    monkeypatch.setattr(sys, "argv", ["main.py"])
+
+    assert main_module.main() == 130
+    output = capsys.readouterr()
+    assert '"scan_id": "scan-default"' in output.out
+    assert loop_calls == [30]
+
+
+def test_main_manual_mode_is_rejected(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    main_module = load_root_module("main")
+    scanner_created = {"value": False}
+    polling_started = {"value": False}
+
+    monkeypatch.setattr(main_module, "load_config", lambda cls: SimpleNamespace(cluster_id="cid", region="us-east-1", aws_recommended_cron_schedule="22 */4 * * *"))
+    monkeypatch.setattr(main_module, "CloudScanner", lambda config: scanner_created.__setitem__("value", True))
+    monkeypatch.setattr(main_module, "run_polling_loop", lambda *args, **kwargs: polling_started.__setitem__("value", True))
     monkeypatch.setattr(sys, "argv", ["main.py", "manual"])
 
     assert main_module.main() == 1
     output = capsys.readouterr()
-    assert "manual mode is not supported" in output.err
+    assert "supports only 'worker'" in output.err
+    assert scanner_created["value"] is False
+    assert polling_started["value"] is False
+
+
+def test_main_scheduled_mode_is_rejected(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    main_module = load_root_module("main")
+    scanner_created = {"value": False}
+    polling_started = {"value": False}
+
+    monkeypatch.setattr(main_module, "load_config", lambda cls: SimpleNamespace(cluster_id="cid", region="us-east-1", aws_recommended_cron_schedule="22 */4 * * *"))
+    monkeypatch.setattr(main_module, "CloudScanner", lambda config: scanner_created.__setitem__("value", True))
+    monkeypatch.setattr(main_module, "run_polling_loop", lambda *args, **kwargs: polling_started.__setitem__("value", True))
+    monkeypatch.setattr(sys, "argv", ["main.py", "scheduled"])
+
+    assert main_module.main() == 1
+    output = capsys.readouterr()
+    assert "supports only 'worker'" in output.err
+    assert scanner_created["value"] is False
+    assert polling_started["value"] is False
+
+
+def test_main_unknown_mode_is_rejected(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    main_module = load_root_module("main")
+    scanner_created = {"value": False}
+    polling_started = {"value": False}
+
+    monkeypatch.setattr(main_module, "load_config", lambda cls: SimpleNamespace(cluster_id="cid", region="us-east-1", aws_recommended_cron_schedule="22 */4 * * *"))
+    monkeypatch.setattr(main_module, "CloudScanner", lambda config: scanner_created.__setitem__("value", True))
+    monkeypatch.setattr(main_module, "run_polling_loop", lambda *args, **kwargs: polling_started.__setitem__("value", True))
+    monkeypatch.setattr(sys, "argv", ["main.py", "foo"])
+
+    assert main_module.main() == 1
+    output = capsys.readouterr()
+    assert "supports only 'worker'" in output.err
+    assert scanner_created["value"] is False
+    assert polling_started["value"] is False
 
 
 def test_scanner_scheduled_uses_resident_polling_loop(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
