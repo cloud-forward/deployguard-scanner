@@ -137,7 +137,7 @@ probes:
 # 로컬 저장 설정 (디버깅용)
 localOutput:
   enabled: false
-  path: /app/output
+  path: /tmp/output
 
 # 로깅 레벨
 logLevel: INFO

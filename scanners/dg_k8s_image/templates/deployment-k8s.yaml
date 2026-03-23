@@ -87,6 +87,16 @@ spec:
             capabilities:
               drop:
                 - ALL
+          {{- if .Values.localOutput.enabled }}
+          volumeMounts:
+            - name: scanner-output
+              mountPath: {{ .Values.localOutput.path | quote }}
+          {{- end }}
+      {{- if .Values.localOutput.enabled }}
+      volumes:
+        - name: scanner-output
+          emptyDir: {}
+      {{- end }}
       {{- with .Values.pod.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

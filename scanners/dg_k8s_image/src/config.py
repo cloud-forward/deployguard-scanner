@@ -71,7 +71,7 @@ class ScannerConfig:
 
     # 로컬 저장 설정
     save_local_copy: bool = True
-    output_dir: str = "./output"
+    output_dir: str = "/tmp/output"
     output_filename: Optional[str] = None
 
     # 권장 스케줄
@@ -126,7 +126,7 @@ class ScannerConfig:
             max_retries=int(os.getenv("DG_MAX_RETRIES", "3")),
             backoff_seconds=int(os.getenv("DG_BACKOFF_SECONDS", "1")),
             save_local_copy=_get_bool("DG_SAVE_LOCAL_COPY", True),
-            output_dir=os.getenv("DG_OUTPUT_DIR", "./output"),
+            output_dir=os.getenv("DG_OUTPUT_DIR", "/tmp/output"),
             output_filename=os.getenv("DG_OUTPUT_FILENAME"),
             k8s_recommended_cron_schedule=os.getenv("DG_K8S_CRON_SCHEDULE", "*/30 * * * *"),
             image_recommended_cron_schedule=os.getenv("DG_IMAGE_CRON_SCHEDULE", "0 */6 * * *"),

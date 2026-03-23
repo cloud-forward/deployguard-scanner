@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import signal
 import sys
@@ -24,6 +25,20 @@ from scanners.dg_k8s_image.src.api_client import DeployGuardAPIClient
 from scanners.dg_k8s_image.src.config import ScannerConfig
 from scanners.dg_k8s_image.src.image_scanner import ImageScanner
 from scanners.dg_k8s_image.src.k8s_scanner import K8sScanner
+
+
+def _resolve_log_level(raw_level: str | None) -> int:
+    normalized = (raw_level or "INFO").strip().upper()
+    return getattr(logging, normalized, logging.INFO)
+
+
+def _configure_logging() -> None:
+    logging.basicConfig(
+        level=_resolve_log_level(os.getenv("DG_LOG_LEVEL")),
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        force=True,
+    )
 
 
 def _log_worker_event(action: str, **fields: object) -> None:
@@ -61,6 +76,8 @@ def main() -> int:
             os.environ['DG_OUTPUT_DIR'] = args.output_dir
         if args.max_images:
             os.environ['DG_MAX_IMAGES_PER_SCAN'] = str(args.max_images)
+
+        _configure_logging()
 
         # 설정 로드
         config = load_config(ScannerConfig)

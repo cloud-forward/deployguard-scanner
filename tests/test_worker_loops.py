@@ -145,6 +145,20 @@ def test_main_unknown_mode_is_rejected(monkeypatch: pytest.MonkeyPatch, capsys: 
     assert polling_started["value"] is False
 
 
+def test_scanner_resolve_log_level_defaults_to_info() -> None:
+    scan_module = load_scanner_module("scan")
+
+    assert scan_module._resolve_log_level(None) == scan_module.logging.INFO
+    assert scan_module._resolve_log_level("invalid") == scan_module.logging.INFO
+
+
+def test_scanner_resolve_log_level_accepts_valid_level_names() -> None:
+    scan_module = load_scanner_module("scan")
+
+    assert scan_module._resolve_log_level("debug") == scan_module.logging.DEBUG
+    assert scan_module._resolve_log_level("WARNING") == scan_module.logging.WARNING
+
+
 def test_scanner_scheduled_uses_resident_polling_loop(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     scan_module = load_scanner_module("scan")
 

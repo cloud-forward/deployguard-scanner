@@ -144,6 +144,7 @@ def test_scanner_config_defaults_to_pending_claim_path(monkeypatch: pytest.Monke
     loaded = scanner_config.ScannerConfig.from_env()
 
     assert loaded.scan_poll_path == "/api/v1/scans/pending"
+    assert loaded.output_dir == "/tmp/output"
 
 
 def test_scanner_config_defaults_exclude_kube_system(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -155,3 +156,15 @@ def test_scanner_config_defaults_exclude_kube_system(monkeypatch: pytest.MonkeyP
     loaded = scanner_config.ScannerConfig.from_env()
 
     assert loaded.exclude_namespaces == ["kube-system", "kube-public", "kube-node-lease"]
+
+
+def test_scanner_config_accepts_custom_output_dir(monkeypatch: pytest.MonkeyPatch) -> None:
+    scanner_config = load_scanner_src_module("config")
+
+    monkeypatch.setenv("DG_CLUSTER_ID", "cluster-metadata-id")
+    monkeypatch.setenv("DG_API_URL", "https://engine.example.com/")
+    monkeypatch.setenv("DG_OUTPUT_DIR", "/custom/output")
+
+    loaded = scanner_config.ScannerConfig.from_env()
+
+    assert loaded.output_dir == "/custom/output"

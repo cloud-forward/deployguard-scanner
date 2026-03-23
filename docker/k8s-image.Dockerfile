@@ -28,7 +28,8 @@ COPY shared/ ./shared/
 RUN trivy image --download-db-only
 
 # 출력 디렉토리
-RUN mkdir -p /app/output
+RUN mkdir -p /app/output /tmp/output \
+    && chown -R 1000:0 /app/output /tmp/output
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1

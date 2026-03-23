@@ -130,11 +130,19 @@ spec:
               mountPath: /tmp
             - name: trivy-cache
               mountPath: /tmp/trivy-cache
+            {{- if .Values.localOutput.enabled }}
+            - name: scanner-output
+              mountPath: {{ .Values.localOutput.path | quote }}
+            {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
         - name: trivy-cache
           emptyDir: {}
+        {{- if .Values.localOutput.enabled }}
+        - name: scanner-output
+          emptyDir: {}
+        {{- end }}
       {{- with .Values.pod.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
