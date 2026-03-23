@@ -1,0 +1,61 @@
+name: scanner-ci-ecr
+
+on:
+  push:
+    branches:
+      - develop
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+  ECR_REPOSITORY: deployguard-scanner
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - name: aws
+            dockerfile: docker/aws-scanner.Dockerfile
+          - name: k8s-image
+            dockerfile: docker/k8s-image.Dockerfile
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build image
+        run: |
+          IMAGE_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY
+          SHA_TAG=${GITHUB_SHA::7}
+          BRANCH_NAME=$(echo "${GITHUB_REF_NAME}" | tr '/' '-')
+
+          docker build \
+            -f ${{ matrix.target.dockerfile }} \
+            -t $IMAGE_URI:${{ matrix.target.name }}-$SHA_TAG \
+            -t $IMAGE_URI:${{ matrix.target.name }}-$BRANCH_NAME-latest \
+            .
+
+      - name: Push image
+        run: |
+          IMAGE_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY
+          SHA_TAG=${GITHUB_SHA::7}
+          BRANCH_NAME=$(echo "${GITHUB_REF_NAME}" | tr '/' '-')
+
+          docker push $IMAGE_URI:${{ matrix.target.name }}-$SHA_TAG
+          docker push $IMAGE_URI:${{ matrix.target.name }}-$BRANCH_NAME-latest

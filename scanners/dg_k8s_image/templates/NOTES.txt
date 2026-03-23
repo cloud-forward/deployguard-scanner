@@ -1,0 +1,47 @@
+=======================================================
+  DeployGuard Scanner 설치 완료!
+=======================================================
+
+클러스터 ID: {{ include "deployguard-scanner.clusterId" . }}
+클러스터 이름: {{ include "deployguard-scanner.clusterName" . }}
+API URL: {{ include "deployguard-scanner.apiUrl" . }}
+
+-------------------------------------------------------
+설치된 컴포넌트:
+-------------------------------------------------------
+{{- if .Values.k8sScanner.enabled }}
+✅ K8s Scanner Deployment
+   replicas: {{ .Values.k8sScanner.replicas }}
+   상태 확인: kubectl get deployment {{ include "deployguard-scanner.fullname" . }}-k8s -n {{ include "deployguard-scanner.namespace" . }}
+   실행 모드: worker
+{{- end }}
+
+{{- if .Values.imageScanner.enabled }}
+✅ Image Scanner Deployment
+   replicas: {{ .Values.imageScanner.replicas }}
+   상태 확인: kubectl get deployment {{ include "deployguard-scanner.fullname" . }}-image -n {{ include "deployguard-scanner.namespace" . }}
+   실행 모드: worker
+{{- end }}
+
+-------------------------------------------------------
+스캔 상태 확인:
+-------------------------------------------------------
+# Deployment 상태
+kubectl get deployment -n {{ include "deployguard-scanner.namespace" . }}
+
+# Pod 로그 확인
+kubectl logs -n {{ include "deployguard-scanner.namespace" . }} -l app.kubernetes.io/name={{ include "deployguard-scanner.name" . }} --tail=100
+
+-------------------------------------------------------
+문제 해결:
+-------------------------------------------------------
+# ServiceAccount 확인
+kubectl get sa -n {{ include "deployguard-scanner.namespace" . }}
+
+# RBAC 권한 확인
+kubectl auth can-i list pods --as=system:serviceaccount:{{ include "deployguard-scanner.namespace" . }}:{{ include "deployguard-scanner.serviceAccountName" . }}
+
+-------------------------------------------------------
+DeployGuard Dashboard에서 스캔 결과를 확인하세요:
+https://dashboard.deployguard.io/clusters/{{ include "deployguard-scanner.clusterId" . }}
+=======================================================
