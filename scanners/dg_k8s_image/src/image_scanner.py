@@ -41,6 +41,11 @@ from .api_client import DeployGuardAPIClient
 from .utils import generate_scan_id, get_timestamp, save_json
 from shared.orchestrator import ScanOrchestrator
 
+from .exposure_summary import (
+    build_exposure_summary,
+    upload_summary_to_s3,
+    upload_latest_pointer_to_s3,
+)
 
 # ---------------------------------------------------------------------------
 # 알려진 Exploitable CVE (Analysis Engine과 동기화)
@@ -333,6 +338,24 @@ class ImageScanner:
 
         uploaded_files = [orchestrator.upload_result(payload, self.config.upload_file_name)]
 
+        try:
+            summary = build_exposure_summary({"payload": payload})
+            summary_key = upload_summary_to_s3(
+                cluster_id=self.config.cluster_id,
+                scan_id=scan_id,
+                summary=summary,
+            )
+            upload_latest_pointer_to_s3(
+                cluster_id=self.config.cluster_id,
+                scan_id=scan_id,
+                summary_key=summary_key,
+                scanned_at=self.scan_time,
+            )
+        
+        except Exception as exc:
+            print(f"[-] exposure summary upload failed (non-fatal): {exc}")
+        
+        
         run_summary = payload.get("run_summary", {})
         complete_result = orchestrator.complete_scan(
             meta={
